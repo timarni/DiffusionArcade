@@ -16,13 +16,13 @@ import os
 import random
 from collections import defaultdict
 from datetime import datetime
-
+from tqdm import tqdm
 from ple import PLE
 from ple.games.pong import Pong
 
 
 ### Hyper-parameters for Q-learning
-EPISODES = 50 # nbr of games
+EPISODES = 500 # nbr of games
 MAX_STEPS = 30_000 # max_setps per episode as a safety break
 ALPHA = 1e-04 # learning‑rate
 GAMMA = 0.99 # discount
@@ -30,6 +30,8 @@ EPSILON_START = 1.0 # ε‑greedy exploration schedule (with proba ε take a ran
 EPSILON_END = 0.05
 EPSILON_DECAY_LEN = EPISODES # linearly decay over whole run
 STATE_BINS = (12, 12, 8, 12, 3, 3, 12) # discretisation for y, y‑vel, x, y, vx, vy, y
+
+recording = True
 
 ### Helper functions
 def discretise(state: dict) -> tuple:
@@ -83,18 +85,21 @@ def plot_scores_per_epoch(scores_agent, scores_cpu):
 
 ### PLE set‑up
 game = Pong(width=64, height=48, MAX_SCORE=11, ball_speed_ratio=0.02, cpu_speed_ratio=0.005, players_speed_ratio=0.01)
-env = PLE(game, fps=30, display_screen=True) # display mode -> set fps=30 and display_screen = True
+env = PLE(game, fps=30, display_screen=False) # display mode -> set fps=30 and display_screen = True
 env.init()
 ACTIONS = env.getActionSet() # [K_UP, K_DOWN, None]
 ACTION_IDX = {a: i for i, a in enumerate(ACTIONS)}
 
 ### create Q‑table & logging CSV
 Q = defaultdict(lambda: [0.0] * len(ACTIONS))
-run_stamp = datetime.now().strftime("%Y‑%m‑%d_%H‑%M‑%S")
-os.makedirs("logs", exist_ok=True)
-csv_path = f"logs/pong_states_{run_stamp}.csv"
 
-with open(csv_path, "w", newline="") as f_csv:
+
+if recording:
+    run_stamp = datetime.now().strftime("%Y‑%m‑%d_%H‑%M‑%S")
+    os.makedirs("logs", exist_ok=True)
+    csv_path = f"logs/pong_states_{run_stamp}.csv"
+
+    f_csv = open(csv_path, "w", newline="")
     csv_writer = csv.writer(f_csv)
     header = [
         "episode", "step",
@@ -106,51 +111,53 @@ with open(csv_path, "w", newline="") as f_csv:
     ]
     csv_writer.writerow(header)
 
-    agent_score_per_ep = []
-    cpu_score_per_ep = []
 
-    # main loop
-    total_steps = 0
-    for ep in range(EPISODES):
-        env.reset_game()
-        state = discretise(env.getGameState())
-        done = False
-        step = 0
-        eps = epsilon_by_episode(ep)
+agent_score_per_ep = []
+cpu_score_per_ep = []
 
-        agent_score_prev = 0
-        cpu_score_prev = 0
+# main loop
+total_steps = 0
+for ep in tqdm(range(EPISODES)):
+    env.reset_game()
+    state = discretise(env.getGameState())
+    done = False
+    step = 0
+    eps = epsilon_by_episode(ep)
 
-        while not done and step < MAX_STEPS:
-            # ε‑greedy policy
-            if random.random() < eps: # exploration
-                action = random.choice(ACTIONS)
-            else: # exploitation
-                qs = Q[state]
-                action = ACTIONS[max(range(len(qs)), key=qs.__getitem__)]
+    agent_score_prev = 0
+    cpu_score_prev = 0
 
-            reward = env.act(action) # advance one frame based on action chosen and get reward for the action
-            next_state_raw = env.getGameState() # get dict containing information about the world after the step is done
-            next_state = discretise(next_state_raw) # discretise to be able to store in Q-table
-            done = env.game_over() # check if episode is over (i.e. someone won)
+    while not done and step < MAX_STEPS:
+        # ε‑greedy policy
+        if random.random() < eps: # exploration
+            action = random.choice(ACTIONS)
+        else: # exploitation
+            qs = Q[state]
+            action = ACTIONS[max(range(len(qs)), key=qs.__getitem__)]
 
-            agent_score_new = game.score_counts["agent"]
-            cpu_score_new = game.score_counts["cpu"]
+        reward = env.act(action) # advance one frame based on action chosen and get reward for the action
+        next_state_raw = env.getGameState() # get dict containing information about the world after the step is done
+        next_state = discretise(next_state_raw) # discretise to be able to store in Q-table
+        done = env.game_over() # check if episode is over (i.e. someone won)
 
-            if agent_score_new != agent_score_prev:
-                print("Agent score: ", agent_score_new)
-                agent_score_prev = agent_score_new
-            if cpu_score_new != cpu_score_prev:
-                # print("CPU scored")
-                cpu_score_prev = cpu_score_new
+        agent_score_new = game.score_counts["agent"]
+        cpu_score_new = game.score_counts["cpu"]
 
-            # Q‑learning update
-            best_next = max(Q[next_state])
-            Q[state][ACTION_IDX[action]] += ALPHA * (
-                reward + GAMMA * best_next - Q[state][ACTION_IDX[action]]
-            )
-            state = next_state
+        if agent_score_new != agent_score_prev:
+            # print("Agent score: ", agent_score_new)
+            agent_score_prev = agent_score_new
+        if cpu_score_new != cpu_score_prev:
+            # print("CPU scored")
+            cpu_score_prev = cpu_score_new
 
+        # Q‑learning update
+        best_next = max(Q[next_state])
+        Q[state][ACTION_IDX[action]] += ALPHA * (
+            reward + GAMMA * best_next - Q[state][ACTION_IDX[action]]
+        )
+        state = next_state
+
+        if recording:
             # write frame/game state information to csv
             csv_writer.writerow([
                 ep, step,
@@ -165,18 +172,18 @@ with open(csv_path, "w", newline="") as f_csv:
                 ACTION_IDX[action],
             ])
 
-            step += 1
-            total_steps += 1
+        step += 1
+        total_steps += 1
 
-        agent_score_per_ep.append(agent_score_prev)
-        cpu_score_per_ep.append(cpu_score_prev)
+    agent_score_per_ep.append(agent_score_prev)
+    cpu_score_per_ep.append(cpu_score_prev)
 
-        if (ep + 1) % 50 == 0:
-            print(f"[{ep + 1}/{EPISODES}] ε = {eps:.3f} | steps so far: {total_steps}")
+    if (ep + 1) % 50 == 0:
+        print(f"[{ep + 1}/{EPISODES}] ε = {eps:.3f} | steps so far: {total_steps}")
 
+if recording:
+    f_csv.close()
 
 plot_scores_per_epoch(agent_score_per_ep, cpu_score_per_ep)
-
-
 
 print(f"\nFinished. Every state was appended to {csv_path}")
