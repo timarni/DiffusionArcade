@@ -203,8 +203,6 @@ class Pong(PyGameWrapper):
 
         PyGameWrapper.__init__(self, width, height, actions=actions)
 
-        print("Init game")
-
         # the %'s come from original values, wanted to keep same ratio when you
         # increase the resolution.
         self.ball_radius = percent_round_int(height, 0.03)

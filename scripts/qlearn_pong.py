@@ -18,8 +18,8 @@ from collections import defaultdict
 from datetime import datetime
 from tqdm import tqdm
 from ple import PLE
-from ple.games.pong import Pong
-
+# from ple.games.pong import Pong
+from pong import Pong
 
 ### Hyper-parameters for Q-learning
 EPISODES = 500 # nbr of games
