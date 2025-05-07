@@ -84,7 +84,7 @@ def plot_scores_per_epoch(scores_agent, scores_cpu):
 
 
 ### PLE set‑up
-game = Pong(width=64, height=48, MAX_SCORE=11, ball_speed_ratio=0.02, cpu_speed_ratio=0.005, players_speed_ratio=0.01)
+game = Pong(width=64, height=48, MAX_SCORE=11, ball_speed_ratio=0.02, cpu_speed_ratio=0.005, players_speed_ratio=0.01, reward_policy='enhanced')
 env = PLE(game, fps=30, display_screen=False) # display mode -> set fps=30 and display_screen = True
 env.init()
 ACTIONS = env.getActionSet() # [K_UP, K_DOWN, None]

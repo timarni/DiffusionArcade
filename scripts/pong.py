@@ -194,7 +194,7 @@ class Pong(PyGameWrapper):
 
     """
 
-    def __init__(self, width=64, height=48, cpu_speed_ratio=0.6, players_speed_ratio = 0.4, ball_speed_ratio=0.75,  MAX_SCORE=11):
+    def __init__(self, width=64, height=48, cpu_speed_ratio=0.6, players_speed_ratio = 0.4, ball_speed_ratio=0.75,  MAX_SCORE=11, reward_policy='basic'):
 
         actions = {
             "up": K_w,
@@ -215,6 +215,8 @@ class Pong(PyGameWrapper):
         self.paddle_height = percent_round_int(height, 0.15)
         self.paddle_dist_to_wall = percent_round_int(width, 0.0625)
         self.MAX_SCORE = MAX_SCORE
+
+        self.reward_policy = reward_policy
 
         self.dy = 0.0
         self.score_sum = 0.0  # need to deal with 11 on either side winning
@@ -370,12 +372,17 @@ class Pong(PyGameWrapper):
         if self.ball.pos.x <= 0:
             
             # simplest version
-            # self.score_sum += self.rewards["negative"]  # simplest version
+            if self.reward_policy == 'basic':
+                self.score_sum += self.rewards["negative"]  # simplest version
 
             # version that also considers distance to ball
-            dist_to_ball = abs(self.agentPlayer.pos.y - self.ball.pos.y)
-            dist_factor = dist_to_ball / self.height
-            self.score_sum += 0.5*self.rewards["negative"] + dist_factor*self.rewards["negative"]
+            elif self.reward_policy == 'enhanced':
+                dist_to_ball = abs(self.agentPlayer.pos.y - self.ball.pos.y)
+                dist_factor = dist_to_ball / self.height
+                self.score_sum += 0.5*self.rewards["negative"] + dist_factor*self.rewards["negative"]
+            
+            else:
+                raise ValueError("The given reward_policy (passed to Pong(...)) does not exist.")
 
             self.score_counts["cpu"] += 1.0
             self._reset_ball(-1)
