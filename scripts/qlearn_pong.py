@@ -22,9 +22,9 @@ from ple.games.pong import Pong
 
 
 ### Hyper-parameters for Q-learning
-EPISODES = 5000 # nbr of games
+EPISODES = 50 # nbr of games
 MAX_STEPS = 30_000 # max_setps per episode as a safety break
-ALPHA = 0.1 # learning‑rate
+ALPHA = 1e-04 # learning‑rate
 GAMMA = 0.99 # discount
 EPSILON_START = 1.0 # ε‑greedy exploration schedule (with proba ε take a random action and with proba 1-ε action with the highest Q-value)
 EPSILON_END = 0.05
@@ -58,11 +58,34 @@ def epsilon_by_episode(ep):
     return EPSILON_END + (EPSILON_START - EPSILON_END) * frac
 
 
+def plot_scores_per_epoch(scores_agent, scores_cpu):
+    import matplotlib.pyplot as plt
+
+    assert len(scores_agent) == len(scores_cpu), f"Not same amount of scores for agent ({len(scores_agent)}) as for cpu ({len(scores_cpu)})"
+
+    epochs = list(range(len(scores_agent)))
+
+    # Create the plot
+    plt.figure(figsize=(10, 5))
+    plt.plot(epochs, scores_agent, label='Agent Points', color='blue')
+    plt.plot(epochs, scores_cpu, label='CPU Points', color='red')
+
+    # Add labels and title
+    plt.xlabel('Epoch')
+    plt.ylabel('Points')
+    plt.title('Agent vs CPU Points Over Time')
+    plt.legend()
+    plt.grid(True)
+
+    # Show plot
+    plt.show()
+
+
 ### PLE set‑up
-game = Pong(width=64, height=48, MAX_SCORE=11)
-env = PLE(game, fps=300, display_screen=False) # display mode -> set fps=30 and display_screen = True
+game = Pong(width=64, height=48, MAX_SCORE=11, ball_speed_ratio=0.02, cpu_speed_ratio=0.005, players_speed_ratio=0.01)
+env = PLE(game, fps=30, display_screen=True) # display mode -> set fps=30 and display_screen = True
 env.init()
-ACTIONS = env.getActionSet() # [K_UP, K_DOWN]
+ACTIONS = env.getActionSet() # [K_UP, K_DOWN, None]
 ACTION_IDX = {a: i for i, a in enumerate(ACTIONS)}
 
 ### create Q‑table & logging CSV
@@ -83,6 +106,9 @@ with open(csv_path, "w", newline="") as f_csv:
     ]
     csv_writer.writerow(header)
 
+    agent_score_per_ep = []
+    cpu_score_per_ep = []
+
     # main loop
     total_steps = 0
     for ep in range(EPISODES):
@@ -91,6 +117,9 @@ with open(csv_path, "w", newline="") as f_csv:
         done = False
         step = 0
         eps = epsilon_by_episode(ep)
+
+        agent_score_prev = 0
+        cpu_score_prev = 0
 
         while not done and step < MAX_STEPS:
             # ε‑greedy policy
@@ -104,6 +133,16 @@ with open(csv_path, "w", newline="") as f_csv:
             next_state_raw = env.getGameState() # get dict containing information about the world after the step is done
             next_state = discretise(next_state_raw) # discretise to be able to store in Q-table
             done = env.game_over() # check if episode is over (i.e. someone won)
+
+            agent_score_new = game.score_counts["agent"]
+            cpu_score_new = game.score_counts["cpu"]
+
+            if agent_score_new != agent_score_prev:
+                print("Agent score: ", agent_score_new)
+                agent_score_prev = agent_score_new
+            if cpu_score_new != cpu_score_prev:
+                # print("CPU scored")
+                cpu_score_prev = cpu_score_new
 
             # Q‑learning update
             best_next = max(Q[next_state])
@@ -129,7 +168,15 @@ with open(csv_path, "w", newline="") as f_csv:
             step += 1
             total_steps += 1
 
+        agent_score_per_ep.append(agent_score_prev)
+        cpu_score_per_ep.append(cpu_score_prev)
+
         if (ep + 1) % 50 == 0:
             print(f"[{ep + 1}/{EPISODES}] ε = {eps:.3f} | steps so far: {total_steps}")
+
+
+plot_scores_per_epoch(agent_score_per_ep, cpu_score_per_ep)
+
+
 
 print(f"\nFinished. Every state was appended to {csv_path}")
