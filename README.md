@@ -1,5 +1,7 @@
 # DiffusionArcade
 
+A project that combines diffusion models with reinforcement learning for Pong game generation.
+
 ## Setup instructions
 
 To set up the environment for DiffusionArcade, follow these steps:
@@ -14,4 +16,14 @@ To set up the environment for DiffusionArcade, follow these steps:
    source setup_env.sh
    ```
 
-This will create a conda environment named `diffusion_arcade` with Python 3.10 and install all required packages listed in `requirements.txt`. Ensure you have conda installed and available in your PATH.
+This will create a conda environment named `diffusion_arcade` with Python 3.10 and install all required packages defined in `pyproject.toml`. Ensure you have conda installed and available in your PATH.
+
+## Usage
+
+### Diffusion Models
+
+Run the following notebook to test the diffusion model:
+
+```bash
+jupyter lab notebooks/diffusion_model.ipynb
+```
