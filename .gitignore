@@ -1,3 +1,4 @@
 logs/
 frames/
 scripts/__pycache__/
+agents/
