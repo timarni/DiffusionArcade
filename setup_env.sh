@@ -2,11 +2,15 @@
 
 echo "Creating conda environment..."
 conda create -n diffusion_arcade python=3.10 -y
-conda activate diffusion_arcade
+source activate diffusion_arcade
 
 echo "Upgrading pip"
 pip install --upgrade pip
 
-echo "Installing libraries..."
-pip install -qq -U -r requirements.txt
+echo "Installing project and dependencies..."
+pip install -e .
+
+echo "Registering kernel..."
+python -m ipykernel install --user --name diffusion_arcade --display-name "Python (diffusion_arcade)"
+
 echo "Done!"

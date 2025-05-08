@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "diffusion_arcade"
+version = "0.1.0"
+description = "A project that combines diffusion models with reinforcement learning for Pong game generation"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+dependencies = [
+    "diffusers",
+    "datasets",
+    "transformers",
+    "accelerate",
+    "ftfy",
+    "pyarrow==9.0.0",
+    "ipywidgets",
+    "matplotlib",
+    "torchvision",
+    "jupyter",
+    "ipykernel",
+    "python-dotenv"
+]
+
+[tool.wheel]
+exclude = ["assets*", "notebooks*"]
