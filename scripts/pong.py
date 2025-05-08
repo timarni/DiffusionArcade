@@ -225,6 +225,8 @@ class Pong(PyGameWrapper):
             "cpu": 0.0
         }
 
+        # self.ball_hit_counter = 0  # only for debugging
+
     def _handle_player_events(self):
         self.dy = 0
 
@@ -369,14 +371,14 @@ class Pong(PyGameWrapper):
         is_terminal_state = False
 
         # logic
-        if self.ball.pos.x <= 0:
-            
-            # simplest version
+        if self.ball.pos.x <= 0:    # agent loses the point
+            # 'basic': simplest version
             if self.reward_policy == 'basic':
                 self.score_sum += self.rewards["negative"]  # simplest version
 
-            # version that also considers distance to ball
-            elif self.reward_policy == 'enhanced':
+            # 'enhanced': version that also considers distance to ball
+            # 'enhanced_2': version that additionally adds reward when hitting the ball
+            elif self.reward_policy == 'enhanced' or self.reward_policy == 'enhanced_2':
                 dist_to_ball = abs(self.agentPlayer.pos.y - self.ball.pos.y)
                 dist_factor = dist_to_ball / self.height
                 self.score_sum += 0.5*self.rewards["negative"] + dist_factor*self.rewards["negative"]
@@ -393,6 +395,14 @@ class Pong(PyGameWrapper):
             self.score_counts["agent"] += 1.0
             self._reset_ball(1)
             is_terminal_state = True
+
+        epsilon = 0.01
+        if abs((self.ball.pos.x - self.ball.radius/2) - (self.agentPlayer.pos.x + self.paddle_width/2)) < epsilon and self.agentPlayer.pos.y - self.paddle_height/2 <= self.ball.pos.y <= self.agentPlayer.pos.y + self.paddle_height/2:
+            # agent hits the ball
+            # self.ball_hit_counter += 1
+            # print(f"Ball hit {self.ball_hit_counter} times")
+            if self.reward_policy == 'enhanced_2':
+                self.score_sum += self.rewards["positive"]
 
         if is_terminal_state:
             # winning

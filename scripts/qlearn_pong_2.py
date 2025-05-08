@@ -9,6 +9,11 @@ Tested with:
 
 Run:
     python3 qlearn_pong.py
+    --fps, frames per second for training, default=1000
+    parser.add_argument("--display", type=int, default=False)
+    parser.add_argument("--eval", type=bool, default=True)
+    parser.add_argument("--plot", type=bool, default=True)
+    parser.add_argument("--eval_vis", type=bool, default=False)
 """
 
 import csv
@@ -22,15 +27,15 @@ import argparse
 from collections import defaultdict
 from datetime import datetime
 
-import pygame
 from ple import PLE
 # from ple.games.pong import Pong
 from pong import Pong
 
+
 ### Hyper-parameters for Q-learning
-EPISODES = 2000 # nbr of games
+EPISODES = 5000 # nbr of games
 MAX_STEPS = 30_000 # max_setps per episode as a safety break
-ALPHA = 1e-04 # learning‑rate
+ALPHA = 0.1 # learning‑rate
 GAMMA = 0.99 # discount
 EPSILON_START = 1.0 # ε‑greedy exploration schedule (with proba ε take a random action and with proba 1-ε action with the highest Q-value)
 EPSILON_END = 0.05
@@ -39,14 +44,13 @@ STATE_BINS = (12, 12, 8, 12, 3, 3, 12) # discretisation for y, y‑vel, x, y, vx
 
 ### Evaluations for debugging
 EVAL_AGENT_SCORE = True
-EVAL_CPU_SCORE = True
+EVAL_CPU_SCORE = False
 
 ### Game setting
-CPU_SPEED_RATIO = 0.015  # 0.6
-PLAYERS_SPEED_RATIO = 0.01  # 0.4
-BALL_SPEED_RATIO = 0.02
+CPU_SPEED_RATIO = 0.25
+PLAYERS_SPEED_RATIO = 0.5
+BALL_SPEED_RATIO = 0.75
 
-recording = True
 
 ### Helper functions
 def discretise(state: dict) -> tuple:
@@ -75,60 +79,23 @@ def epsilon_by_episode(ep):
     return EPSILON_END + (EPSILON_START - EPSILON_END) * frac
 
 
-def plot_agent_return(episode_returns, run_stamp):
-    # Plot return per episode
-    window = 50
-    returns = np.array(episode_returns, dtype=float)
-    # simple centred moving average (same length as data)
-    kernel = np.ones(window) / window
-    ma = np.convolve(returns, kernel, mode="same")
-
-    plt.figure(figsize=(8, 4))
-    plt.plot(returns, label="Episode return", alpha=0.3)
-    plt.plot(ma, label=f"{window}-episode moving avg")
-    plt.xlabel("Episode")
-    plt.ylabel("Total reward")
-    plt.title("Learning curve – Pong Q‑learning")
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(f"logs/return_curve_{run_stamp}.png")
-    print(f"Plot return per episode saved to: logs/return_curve_{run_stamp}.png")
-
-
-def plot_scores_per_episode(scores_agent, scores_cpu, run_stamp):
-    assert len(scores_agent) == len(scores_cpu), f"Not same amount of scores for agent ({len(scores_agent)}) as for cpu ({len(scores_cpu)})"
-
-    episodes = list(range(len(scores_agent)))
-
-    # Create the plot
-    plt.figure(figsize=(10, 5))
-    plt.plot(episodes, scores_agent, label='Agent Points', color='blue')
-    plt.plot(episodes, scores_cpu, label='CPU Points', color='red')
-
-    # Add labels and title
-    plt.xlabel('Episode')
-    plt.ylabel('Points')
-    plt.title('Agent vs CPU Points Over Time')
-    plt.legend()
-    plt.savefig(f"logs/score_curve_{run_stamp}.png")
-    plt.grid(True)
-    print(f"Plot return per episode saved to: logs/score_curve_{run_stamp}.png")
-
-
-def train_agent(fps=30, display_screen=False, recording=True):
+def train_agent(fps = 1000, display_screen = False, recording = True): # for visual inspection fps = 30 and display_screen = True
     ### PLE set‑up
-    game = Pong(width=64, height=48, MAX_SCORE=11, 
-                cpu_speed_ratio=CPU_SPEED_RATIO, 
-                players_speed_ratio=PLAYERS_SPEED_RATIO,
-                ball_speed_ratio=BALL_SPEED_RATIO, 
-                reward_policy='enhanced')
-    env = PLE(game, fps=fps, display_screen=display_screen) # display mode -> set fps=30 and display_screen = True
+    game = Pong(width=64, height=48, MAX_SCORE=11,
+                cpu_speed_ratio = CPU_SPEED_RATIO, 
+                players_speed_ratio = PLAYERS_SPEED_RATIO,
+                ball_speed_ratio = BALL_SPEED_RATIO)
+    env = PLE(game, fps=fps, display_screen=display_screen)
     env.init()
     ACTIONS = env.getActionSet() # [K_UP, K_DOWN, None]
     ACTION_IDX = {a: i for i, a in enumerate(ACTIONS)}
+    print(f"Game setup completed! Actions are {ACTIONS}")
 
     ### create Q‑table & logging CSV
     Q = defaultdict(lambda: [0.0] * len(ACTIONS))
+    run_stamp = datetime.now().strftime("%Y‑%m‑%d_%H‑%M‑%S")
+    os.makedirs("logs", exist_ok=True)
+    csv_path = f"logs/pong_states_{run_stamp}.csv"
 
     if recording:
         run_stamp = datetime.now().strftime("%Y‑%m‑%d_%H‑%M‑%S")
@@ -162,10 +129,8 @@ def train_agent(fps=30, display_screen=False, recording=True):
         state = discretise(env.getGameState())
         done = False
         step = 0
-        eps = epsilon_by_episode(ep)
-
         agent_score_prev = 0
-        cpu_score_prev = 0
+        eps = epsilon_by_episode(ep)
 
         while not done and step < MAX_STEPS:
             # ε‑greedy policy
@@ -184,14 +149,8 @@ def train_agent(fps=30, display_screen=False, recording=True):
             if EVAL_AGENT_SCORE:
                 agent_score_new = game.score_counts["agent"]
                 if agent_score_new != agent_score_prev:
-                    # print(f"Agent score change at eps {ep} and step {step} to: ", agent_score_new)
+                    print(f"Agent score change at eps {ep} and step {step} to: ", agent_score_new)
                     agent_score_prev = agent_score_new
-
-            if EVAL_CPU_SCORE:
-                cpu_score_new = game.score_counts["cpu"]
-                if cpu_score_new != cpu_score_prev:
-                    # print("CPU scored")
-                    cpu_score_prev = cpu_score_new
 
             # Q‑learning update
             best_next = max(Q[next_state])
@@ -200,8 +159,8 @@ def train_agent(fps=30, display_screen=False, recording=True):
             )
             state = next_state
 
+            # write frame/game state information to csv
             if recording:
-                # write frame/game state information to csv
                 csv_writer.writerow([
                     ep, step,
                     next_state_raw["player_y"],
@@ -217,34 +176,70 @@ def train_agent(fps=30, display_screen=False, recording=True):
 
             step += 1
             total_steps += 1
-
+        
         episode_returns.append(total_reward)
-        agent_score_per_ep.append(agent_score_prev)
-        cpu_score_per_ep.append(cpu_score_prev)
+        agent_score_per_ep.append(game.score_counts["agent"])
+        cpu_score_per_ep.append(game.score_counts["cpu"])
         if recording:
             ret_csv.writerow([ep, total_reward])
 
         if (ep + 1) % 50 == 0:
             print(f"[{ep + 1}/{EPISODES}] ε = {eps:.3f} | steps so far: {total_steps}")
-
+    
     if recording:
         f_csv.close()
 
     print(f"\nFinished. Every state was appended to {csv_path}")
 
-    os.makedirs("agents", exist_ok=True)
     agent_path = f"agents/q_table_{run_stamp}.pkl"
     with open(agent_path, "wb") as f:
         pickle.dump(dict(Q), f)
 
     print(f"The agent policy was stored in {agent_path}")
 
-    pygame.quit()
-
     return episode_returns, agent_score_per_ep, cpu_score_per_ep, run_stamp, Q
 
 
-def evaluate_agent(Q, games=100, fps=1000, display=False):
+def plot_agent_return(episode_returns, run_stamp):
+    # Plot return per episode
+    window = 50
+    returns = np.array(episode_returns, dtype=float)
+    # simple centred moving average (same length as data)
+    kernel = np.ones(window) / window
+    ma = np.convolve(returns, kernel, mode="same")
+
+    plt.figure(figsize=(8, 4))
+    plt.plot(returns, label="Episode return", alpha=0.3)
+    plt.plot(ma, label=f"{window}-episode moving avg")
+    plt.xlabel("Episode")
+    plt.ylabel("Total reward")
+    plt.title("Learning curve – Pong Q‑learning")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(f"logs/return_curve_{run_stamp}.png")
+    print(f"Plot return per episode saved to: logs/return_curve_{run_stamp}.png")
+
+def plot_scores_per_episode(scores_agent, scores_cpu, run_stamp):
+    assert len(scores_agent) == len(scores_cpu), f"Not same amount of scores for agent ({len(scores_agent)}) as for cpu ({len(scores_cpu)})"
+
+    episodes = list(range(len(scores_agent)))
+
+    # Create the plot
+    plt.figure(figsize=(10, 5))
+    plt.plot(episodes, scores_agent, label='Agent Points', color='blue')
+    plt.plot(episodes, scores_cpu, label='CPU Points', color='red')
+
+    # Add labels and title
+    plt.xlabel('Episode')
+    plt.ylabel('Points')
+    plt.title('Agent vs CPU Points Over Time')
+    plt.legend()
+    plt.savefig(f"logs/score_curve_{run_stamp}.png")
+    plt.grid(True)
+    print(f"Plot return per episode saved to: logs/score_curve_{run_stamp}.png")
+
+
+def evaluate_agent(Q, games = 100, fps = 1000, display = False):
     # 1. Create game & env
     game = Pong(width=64, height=48, MAX_SCORE=11, 
                 cpu_speed_ratio = CPU_SPEED_RATIO,
@@ -268,7 +263,7 @@ def evaluate_agent(Q, games=100, fps=1000, display=False):
             state = discretise(env.getGameState())
 
         if game.score_counts["agent"] > game.score_counts["cpu"]:
-            print(f"game scores:  {game.score_counts['agent']} : {game.score_counts['cpu']}")
+            print(f"game scores:  {game.score_counts["agent"]} : {game.score_counts["cpu"]}")
             wins += 1
 
     # 2. Report
@@ -276,13 +271,10 @@ def evaluate_agent(Q, games=100, fps=1000, display=False):
     print(f"Agent wins : {wins}")
     print(f"Win‑rate   : {wins/games:.2%}")
 
-    pygame.quit()
-
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--recording", type=bool, default=True)
-    parser.add_argument("--fps", type=int, default=30)
+    parser.add_argument("--fps", type=int, default=1000)
     parser.add_argument("--display", type=int, default=False)
     parser.add_argument("--eval", type=bool, default=True)
     parser.add_argument("--plot", type=bool, default=True)
@@ -296,6 +288,13 @@ def main():
         recording=args.recording
     )
 
+    # EVALUATION
+    if args.eval:
+        print("\nRunning evaluation...")
+        evaluate_agent(
+            Q,
+        )
+    
     # Plot learning curves
     if args.plot:
         print("\n Generate learning curve plots")
@@ -307,20 +306,13 @@ def main():
             scores_cpu = cpu_score_per_ep, 
             run_stamp = run_stamp
         )
-
-    # EVALUATION
-    if args.eval:
-        print("\nRunning evaluation...")
-        evaluate_agent(
-            Q,
-        )
     
     if args.eval_vis:
         print("\nRunning evaluation...")
         evaluate_agent(
             Q,
-            fps=30,
-            display=True
+            fps = 30,
+            display = True
         )
 
 
