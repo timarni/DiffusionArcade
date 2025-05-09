@@ -8,16 +8,15 @@ class PolicyNetwork(nn.Module):
 
         self.l1 = nn.Linear(in_dim, hidden_dim)
         self.l2 = nn.Linear(hidden_dim, out_dim)
-        # self.dropout = nn.Dropout(dropout_p)
+        self.dropout = nn.Dropout(dropout_p)
 
         nn.init.zeros_(self.l2.weight)
         nn.init.zeros_(self.l2.bias)
 
     def forward(self, x):
-        
         x = self.l1(x)
         x = F.relu(x)
-        # x = self.dropout(x)
+        x = self.dropout(x)
         x = self.l2(x)
 
         return x

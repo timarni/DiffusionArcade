@@ -1,7 +1,6 @@
-from ple import PLE
-from ple.games.pong import Pong
-
 from tqdm import tqdm
+import os
+import argparse
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -13,35 +12,40 @@ from torch.utils.data import DataLoader, TensorDataset
 
 import matplotlib.pyplot as plt
 import numpy as np
+import gymnasium as gym
+from gym.wrappers import RecordVideo, RecordEpisodeStatistics
+from reward_wrapper import RewardWrapper
 
+import ale_py
+from atariari.benchmark.wrapper import AtariARIWrapper
 
 from collections import defaultdict
 
-
 from policy_network import PolicyNetwork, ActorCritic
+from policy_network_conv import PolicyNetworkConv, ActorCriticConv
+
 import time
 timestr = time.strftime("%Y%m%d-%H%M%S")
 
-game = Pong(width=64, height=48, MAX_SCORE=11, ball_speed_ratio=0.2, cpu_speed_ratio=0.05, players_speed_ratio=0.01)
-env = PLE(game, fps=60, display_screen=False) # display mode -> set fps=30 and display_screen = True
-env.init()
+# game = Pong(width=64, height=48, MAX_SCORE=11, ball_speed_ratio=0.2, cpu_speed_ratio=0.05, players_speed_ratio=0.01)
+# env = PLE(game, fps=60, display_screen=False) # display mode -> set fps=30 and display_screen = True
+# env.init()
 
-ACTIONS = env.getActionSet()
-print("ACTIONS:\t", ACTIONS)
+def create_agent(n_observation, n_actions, hidden_dim, dropout):
 
-def create_agent(env, hidden_dim, dropout):
-    input_dim = len(env.getGameState())
-    print(env.getGameState())
-    action_dim = len(env.getActionSet())-1
-
-    print("AGENT INPUT DIMENSION:\t", input_dim)
-    print("AGENT OUTPUT DIMENSION:\t", action_dim)
-
-
-    actor = PolicyNetwork(input_dim, hidden_dim, action_dim, dropout)
-    critic = PolicyNetwork(input_dim, hidden_dim, 1, dropout)
+    actor = PolicyNetwork(n_observation, hidden_dim, n_actions, dropout)
+    critic = PolicyNetwork(n_observation, hidden_dim, 1, dropout)
 
     agent = ActorCritic(actor=actor, critic=critic)
+
+    return agent
+
+def create_conv_agent(n_rows, n_cols, channels, hidden_dim, hidden_chan, n_actions, dropout):
+
+    actor = PolicyNetworkConv(channels, 5, 16, n_actions, n_rows, n_cols, hidden_dim, dropout)
+    critic = PolicyNetworkConv(channels, 5, 16, 1, n_rows, n_cols, hidden_dim, dropout)
+
+    agent = ActorCriticConv(actor=actor, critic=critic)
 
     return agent
 
@@ -73,13 +77,13 @@ def clipped_loss(old_log_action_prob, new_log_action_prob, eps, advantages):
 
     loss_1 = policy_ratio * advantages
 
-    # clamped_policy_ratio = torch.clamp(policy_ratio, 1-eps, 1+eps)
+    clamped_policy_ratio = torch.clamp(policy_ratio, 1-eps, 1+eps)
 
-    # loss_2 = clamped_policy_ratio * advantages
+    loss_2 = clamped_policy_ratio * advantages
 
-    # loss = torch.min(loss_1, loss_2)
+    loss = torch.min(loss_1, loss_2)
 
-    return loss_1
+    return loss
 
 def calculate_losses(loss, entropy, entropy_bonus, returns, value_pred):
     policy_loss = -(loss - entropy * entropy_bonus).sum()
@@ -105,14 +109,15 @@ def forward_pass(env, agent, optimiser, discount_factor):
     # Get the inital states and actions to start off the model
     states, actions, actions_log_probability, values, rewards, done, episode_reward = init_training()
 
-    env.reset_game()
-    state = list(env.getGameState().values())
+    state, info = env.reset()
+    state, reward, terminated, truncated, info = env.step(env.action_space.sample())
+
     agent.train()
 
     # Run until the game hits a terminal state
     while not done:
         # Add the initial state to the list of states that we have seen
-        state = torch.FloatTensor(state).unsqueeze(0)
+        state = torch.FloatTensor(list(info['labels'].values()))
         states.append(state)
 
         # Evaluate the action prediction (actor) and the value prediction (critic) with the agent
@@ -129,9 +134,9 @@ def forward_pass(env, agent, optimiser, discount_factor):
         # Get the remaining stuff that we need from our environment
         # like the reward for this step, wether we reached a terminal state,
         # and the state of the environment given the last action
-        reward = env.act(ACTIONS[action])
-        done = env.game_over()
-        state = list(env.getGameState().values())
+        state, reward, terminated, truncated, info = env.step(action.item())
+
+        done = terminated or truncated
 
         # Store everything :)
         actions.append(action)
@@ -140,15 +145,11 @@ def forward_pass(env, agent, optimiser, discount_factor):
         rewards.append(reward)
         episode_reward += reward
 
-    # print("ACTION DISTRIBUTION")
-    # print("0 \t->\t", list(actions).count(0))
-    # print("1 \t->\t", list(actions).count(1))
-    # print("2 \t->\t", list(actions).count(2))
-
     # Turn all the lists into tensors of tensors 
-    states = torch.cat(states)
-    actions = torch.cat(actions)
-    actions_log_probability = torch.cat(actions_log_probability)
+    states = torch.stack(states)
+    
+    actions = torch.stack(actions)
+    actions_log_probability = torch.stack(actions_log_probability)
     values = torch.cat(values).squeeze(-1)
 
     # Calculate the returns and then the advantages based on this pass through the network
@@ -165,20 +166,15 @@ def update_policy(agent, states, actions, actions_log_probs, advantages, returns
 
     # dataset = TensorDataset(states, actions, actions_log_probs, advantages, returns,)
     for _ in range(total_steps):
-        batch_states, batch_actions, batch_actions_log_probs, batch_advantages, batch_returns = states, actions, actions_log_probs, advantages, returns
+        action_probs, value_probs = agent(states)
+        value_probs = value_probs
+        action_probs = F.softmax(action_probs)
+        dist = distributions.Categorical(action_probs)
 
-        batch_action_probs, batch_value_probs = agent(batch_states)
-        batch_value_probs = batch_value_probs
-        batch_action_probs = F.softmax(batch_action_probs)
-        batch_dist = distributions.Categorical(batch_action_probs)
-
-        # print(f"Returns: {batch_returns[:5]}")
-        # print(f"Critic Values: {batch_value_probs.squeeze()[:5]}")
-
-        batch_entropy = batch_dist.entropy()
-        new_action_log_probs = batch_dist.log_prob(batch_actions)
-        surrogate_loss = clipped_loss(batch_actions_log_probs, new_action_log_probs, epsilon, batch_advantages)
-        policy_loss, value_loss = calculate_losses(surrogate_loss, batch_entropy, entropy_bonus, batch_returns, batch_value_probs)
+        entropy = dist.entropy()
+        new_action_log_probs = dist.log_prob(actions)
+        surrogate_loss = clipped_loss(actions_log_probs, new_action_log_probs, epsilon, advantages)
+        policy_loss, value_loss = calculate_losses(surrogate_loss, entropy, entropy_bonus, returns, value_probs)
         optimizer.zero_grad()
         policy_loss.backward()
         value_loss.backward()
@@ -190,24 +186,23 @@ def update_policy(agent, states, actions, actions_log_probs, advantages, returns
 
 def evaluate(env, agent):
     agent.eval()
-    rewards = []
     done = False
     episode_reward = 0
-    env.reset_game()
-    state = list(env.getGameState().values())
+    state, info = env.reset()
+    state, reward, terminated, truncated, info = env.step(env.action_space.sample())
+
     while not done:
-        state = torch.FloatTensor(state).unsqueeze(0)
+        state = torch.FloatTensor(list(info['labels'].values()))
         with torch.no_grad():
             action_pred, _ = agent(state)
             action_prob = F.softmax(action_pred, dim=-1)
         action = torch.argmax(action_prob, dim=-1)
-        reward = env.act(ACTIONS[action])
-        state = list(env.getGameState().values())
-        done = env.game_over()
+        state, reward, terminated, truncated, info = env.step(action.item())
+        done = terminated or truncated
         episode_reward += reward
     return episode_reward
 
-def plot_train_rewards(train_rewards, reward_threshold):
+def plot_train_rewards(args, train_rewards, reward_threshold):
     plt.figure(figsize=(12, 8))
     plt.plot(train_rewards, label='Training Reward')
     plt.xlabel('Episode', fontsize=20)
@@ -215,9 +210,15 @@ def plot_train_rewards(train_rewards, reward_threshold):
     plt.hlines(reward_threshold, 0, len(train_rewards), color='y')
     plt.legend(loc='lower right')
     plt.grid()
-    plt.savefig(f"train_rewards_{timestr}.png")
 
-def plot_test_rewards(test_rewards, reward_threshold):
+    # Ensure directory exists
+    output_dir = f"images/{args.env}"
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Save plot
+    plt.savefig(f"{output_dir}/train_rewards_CartPole_{timestr}.png")
+
+def plot_test_rewards(args, test_rewards, reward_threshold):
     plt.figure(figsize=(12, 8))
     plt.plot(test_rewards, label='Testing Reward')
     plt.xlabel('Episode', fontsize=20)
@@ -225,29 +226,48 @@ def plot_test_rewards(test_rewards, reward_threshold):
     plt.hlines(reward_threshold, 0, len(test_rewards), color='y')
     plt.legend(loc='lower right')
     plt.grid()
-    plt.savefig(f"test_rewards_{timestr}.png")
 
-def run_ppo():
+    # Ensure directory exists
+    output_dir = f"images/{args.env}"
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Save plot
+    plt.savefig(f"{output_dir}/test_rewards_CartPole_{timestr}.png")
+
+def run_ppo(env, args):
     DISCOUNT_FACTOR = 0.99
-    MAX_EPISODES = 100000
-    REWARD_THRESHOLD = 15
+    MAX_EPISODES = 10000
+    REWARD_THRESHOLD = 475
     PRINT_INTERVAL = 10
     PPO_STEPS = 8 # MAYBE CHANGE THIS
     N_TRIALS = 100
     EPSILON = 0.2
     ENTROPY_COEFF = 0.01
     HIDDEN_DIM = 64
-    DROPOUT = 0.2
-    LR = 1e-2
+    DROPOUT = 0.1
+    LR = 1e-4
+
+    n_actions = env.action_space.n
+    env.reset()
+    state, reward, terminated, truncated, info = env.step(env.action_space.sample())
+
+    n_observations = len(info['labels'].values())
+
+    print("n_actions:\t", n_actions)
+    print("n_observations:\t", n_observations)
+
+    n_rows, n_cols, channels = state.shape
 
     train_rewards = []
     test_rewards = []
     policy_losses = []
     value_losses = []
-    agent = create_agent(env, HIDDEN_DIM, DROPOUT)
+    agent = create_agent(n_observations, n_actions, HIDDEN_DIM, DROPOUT)
+
     optimizer = torch.optim.Adam(agent.parameters(), lr=LR)
 
-    for episode in tqdm(range(1, MAX_EPISODES+1)):
+    for episode in range(1, MAX_EPISODES+1):
+        print(f"RUNNING EPISODE {episode}")
         train_reward, states, actions, actions_log_prob, advantages, returns = forward_pass(env, agent, optimizer, DISCOUNT_FACTOR)
         policy_loss, value_loss = update_policy(
             agent,
@@ -281,12 +301,38 @@ def run_ppo():
             print(f'Reached reward threshold in {episode} episodes')
             break
 
-    plot_train_rewards(train_rewards, REWARD_THRESHOLD)
-    plot_test_rewards(test_rewards, REWARD_THRESHOLD)
+    plot_train_rewards(args, train_rewards, REWARD_THRESHOLD)
+    plot_test_rewards(args, test_rewards, REWARD_THRESHOLD)
 
+    env.close()
 
 def main():
-    run_ppo()
+    parser = argparse.ArgumentParser(description="A simple script with arguments.")
+
+    parser.add_argument('--env', type=str, required=True, help='Name of the environment to use')
+    parser.add_argument('--human-view', action='store_true', help='Whether you want to see the environment or not')
+
+    args = parser.parse_args()
+
+    match args.env:
+        case 'cartpole':
+            environment_name = "CartPole-v1"
+        case 'acrobot':
+            environment_name = "Acrobot-v1"
+        case 'pong':
+            environment_name = "Pong-v4"
+
+    if args.human_view:
+        env = gym.make(environment_name, render_mode="human")
+    else:
+        env = gym.make(environment_name, render_mode="rgb_array")
+
+    if args.env == 'pong':
+        env = AtariARIWrapper(env)
+
+    env = RecordVideo(env=env, video_folder="./videos", name_prefix="test-video", episode_trigger=lambda x: x % 400 == 0)
+
+    run_ppo(env, args)
 
 if __name__=='__main__':
     main()
