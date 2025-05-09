@@ -1,0 +1,12 @@
+lives: 0
+episode_frame_number: 1001
+frame_number: 1001
+player_y: 150
+player_x: 188
+enemy_y: 152
+enemy_x: 64
+ball_x: 151
+ball_y: 151
+enemy_score: 4
+player_score: 0
+total reward: 16.0
