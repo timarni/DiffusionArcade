@@ -82,7 +82,7 @@ def plot_scores_per_epoch(scores_agent, scores_cpu):
 
 
 ### PLE set‑up
-game = Pong(width=64, height=48, MAX_SCORE=11, ball_speed_ratio=0.02, cpu_speed_ratio=0.005, players_speed_ratio=0.01)
+game = Pong(width=64, height=48, MAX_SCORE=11, ball_speed_ratio=0.2, cpu_speed_ratio=0.05, players_speed_ratio=0.01)
 env = PLE(game, fps=30, display_screen=True) # display mode -> set fps=30 and display_screen = True
 env.init()
 ACTIONS = env.getActionSet() # [K_UP, K_DOWN, None]
@@ -130,8 +130,11 @@ with open(csv_path, "w", newline="") as f_csv:
                 action = ACTIONS[max(range(len(qs)), key=qs.__getitem__)]
 
             reward = env.act(action) # advance one frame based on action chosen and get reward for the action
+            print("REWARD:", reward)
             next_state_raw = env.getGameState() # get dict containing information about the world after the step is done
             next_state = discretise(next_state_raw) # discretise to be able to store in Q-table
+            print("NEXT_STATE:", next_state)
+            print("NEXT_STATE_RAW:", next_state_raw)
             done = env.game_over() # check if episode is over (i.e. someone won)
 
             agent_score_new = game.score_counts["agent"]
