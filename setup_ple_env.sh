@@ -28,6 +28,11 @@ source "${VENV_DIR}/bin/activate"
 echo "==> Upgrading pip and installing Python‑level deps …"
 pip install --upgrade pip
 pip install numpy pillow pygame              # PLE soft deps + PyGame 2
+pip install matplotlib
+pip install tqdm
+pip install opencv-python
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+pip install jsonargparse 
 
 # ----------------------------------------------------------------------------- 
 # Clone and install PLE in editable mode
