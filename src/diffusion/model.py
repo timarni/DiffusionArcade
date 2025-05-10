@@ -1,7 +1,8 @@
 import os
-import argparse
 import torch
 import torch.nn.functional as F
+import wandb
+import yaml
 
 from diffusers import UNet2DModel, DDIMScheduler
 from huggingface_hub import login
@@ -17,6 +18,13 @@ def login_huggingface():
     if token is None:
         raise ValueError("HF_ACCESS_TOKEN environment variable not set. Please add it to your .env file.")
     login(token=token)
+
+
+def load_config(config_path: str = "config.yaml"):
+    """Load configuration from yaml file"""
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+    return config
 
 
 class DiffusionModel:
@@ -72,51 +80,100 @@ class DiffusionModel:
     def train(
         self,
         train_dataloader,
+        val_dataloader=None,
         epochs: int = 8,
-        lr: float = 4e-4
+        lr: float = 4e-4,
+        wandb_config: dict = None,
     ):
         """Train the diffusion model over the provided dataloader"""
         optimizer = torch.optim.AdamW(self.model.parameters(), lr=lr)
-        losses = []
+        train_losses = []
+        val_losses = []
+        best_val_loss = float('inf')
 
         for epoch in range(epochs):
+            # Training
+            self.model.train()
+            epoch_train_losses = []
+            
             loop = tqdm(train_dataloader, desc=f"Epoch {epoch+1}/{epochs}")
             for batch in loop:
                 clean_images = batch["images"].to(self.device)
-
-                # Sample noise to add to the images
                 noise = torch.randn_like(clean_images)
-                bs = clean_images.size(0)
-
-                # Sample a random timestep for each image
                 timesteps = torch.randint(
                     0,
                     self.scheduler.num_train_timesteps,
-                    (bs,),
+                    (clean_images.size(0),),
                     device=self.device
                 ).long()
-
-                # Add noise to the clean images at the sampled timestep
+                
                 noisy_images = self.scheduler.add_noise(clean_images, noise, timesteps)
-
-                # Predict the noise
                 noise_pred = self.model(noisy_images, timesteps).sample
-
-                # Compute the loss
                 loss = F.mse_loss(noise_pred, noise)
-
+                
                 loss.backward()
                 optimizer.step()
                 optimizer.zero_grad()
-
-                losses.append(loss.item())
+                
+                epoch_train_losses.append(loss.item())
                 loop.set_postfix(loss=loss.item())
 
-            if (epoch + 1) % 2 == 0:
-                avg_loss = sum(losses[-len(train_dataloader):]) / len(train_dataloader)
-                print(f"Epoch [{epoch+1}/{epochs}] Average Loss: {avg_loss:.4f}")
+            avg_train_loss = sum(epoch_train_losses) / len(epoch_train_losses)
+            train_losses.append(avg_train_loss)
 
-        return losses
+            # Validation
+            if val_dataloader is not None:
+                self.model.eval()
+                epoch_val_losses = []
+                
+                with torch.no_grad():
+                    for batch in val_dataloader:
+                        clean_images = batch["images"].to(self.device)
+                        noise = torch.randn_like(clean_images)
+                        timesteps = torch.randint(
+                            0,
+                            self.scheduler.num_train_timesteps,
+                            (clean_images.size(0),),
+                            device=self.device
+                        ).long()
+                        
+                        noisy_images = self.scheduler.add_noise(clean_images, noise, timesteps)
+                        noise_pred = self.model(noisy_images, timesteps).sample
+                        loss = F.mse_loss(noise_pred, noise)
+                        epoch_val_losses.append(loss.item())
+
+                avg_val_loss = sum(epoch_val_losses) / len(epoch_val_losses)
+                val_losses.append(avg_val_loss)
+
+                # Save best model
+                if avg_val_loss < best_val_loss:
+                    best_val_loss = avg_val_loss
+                    torch.save(self.model.state_dict(), "best_diffusion_model.pth")
+
+            # Log metrics to wandb if config provided
+            if wandb_config is not None:
+                wandb.log({
+                    "train_loss": avg_train_loss,
+                    "val_loss": avg_val_loss if val_dataloader else None,
+                    "epoch": epoch + 1
+                })
+
+                # Generate and log sample images
+                if (epoch + 1) % 2 == 0:
+                    samples = self.generate(n_images=4)
+                    wandb.log({
+                        "generated_samples": [
+                            wandb.Image(sample.cpu().numpy()) 
+                            for sample in samples
+                        ],
+                        "epoch": epoch + 1
+                    })
+
+            print(f"Epoch [{epoch+1}/{epochs}] "
+                  f"Train Loss: {avg_train_loss:.4f} "
+                  f"Val Loss: {avg_val_loss:.4f if val_dataloader else 'N/A'}")
+
+        return train_losses, val_losses
 
     def generate(
         self,
