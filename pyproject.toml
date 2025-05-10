@@ -22,7 +22,8 @@ dependencies = [
     "torchvision",
     "jupyter",
     "ipykernel",
-    "python-dotenv"
+    "python-dotenv",
+    "wandb",
 ]
 
 [tool.wheel]
