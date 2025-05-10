@@ -1,4 +1,5 @@
 import gymnasium
+import numpy as np
 from constants import *
 
 class RewardWrapper(gymnasium.Wrapper):
@@ -15,13 +16,13 @@ class RewardWrapper(gymnasium.Wrapper):
     def step(self, action):
         obs, reward, terminated, truncated, info = self.env.step(action)
 
-        reward = self.modify_reward(reward, obs, info, self.old_info, terminated)
+        reward = self.modify_reward(obs, info, self.old_info, terminated)
 
         self.old_info = info.copy()
 
         return obs, reward, terminated, truncated, info
 
-    def modify_reward(self, reward, obs, info, old_info, terminated):
+    def modify_reward(self, obs, info, old_info, terminated):
         if old_info == None:
             return 0
 
@@ -31,11 +32,17 @@ class RewardWrapper(gymnasium.Wrapper):
 
         # Check if anything reward-worthy happened
         if self.scored(labels, old_labels):
-            return reward + SCORE_REWARD
+            return SCORE_REWARD
+        # if self.opponent_scored(labels, old_labels):
+        #     return -SCORE_REWARD
         if self.returned_ball(labels, old_labels):
-            return reward + BOUNCE_REWARD
+            return BOUNCE_REWARD
+        # if self.big_movement(labels, old_labels):
+        #     return BIG_MOVE_REWARD
+        if labels['player_score'] == 21:
+            return WIN_REWARD
         
-        return reward
+        return 0
 
     """
     Checks if the ball was rebounded from the player side
@@ -62,6 +69,21 @@ class RewardWrapper(gymnasium.Wrapper):
             return False
 
         if labels['player_score'] > old_labels['player_score']:
+            return True
+        else:
+            return False
+        
+    """
+    Checks if the player moved a lot, trying to smoothen the movements
+    """
+    def big_movement(self, labels, old_labels):
+        if np.abs(labels['player_y'] - old_labels['player_y']) > 15:
+            return True
+        else:
+            return False
+
+    def opponent_scored(self, labels, old_labels):
+        if labels['enemy_score'] > old_labels['enemy_score']:
             return True
         else:
             return False

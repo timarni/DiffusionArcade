@@ -86,7 +86,7 @@ def clipped_loss(old_log_action_prob, new_log_action_prob, eps, advantages):
     return loss
 
 def calculate_losses(loss, entropy, entropy_bonus, returns, value_pred):
-    policy_loss = -(loss - entropy * entropy_bonus).sum()
+    policy_loss = -(loss + entropy * entropy_bonus).sum()
     value_loss = F.mse_loss(returns, value_pred).sum()
 
     return policy_loss, value_loss
@@ -207,7 +207,7 @@ def plot_train_rewards(args, train_rewards, reward_threshold):
     plt.plot(train_rewards, label='Training Reward')
     plt.xlabel('Episode', fontsize=20)
     plt.ylabel('Training Reward', fontsize=20)
-    plt.hlines(reward_threshold, 0, len(train_rewards), color='y')
+    # plt.hlines(reward_threshold, 0, len(train_rewards), color='y')
     plt.legend(loc='lower right')
     plt.grid()
 
@@ -223,7 +223,7 @@ def plot_test_rewards(args, test_rewards, reward_threshold):
     plt.plot(test_rewards, label='Testing Reward')
     plt.xlabel('Episode', fontsize=20)
     plt.ylabel('Testing Reward', fontsize=20)
-    plt.hlines(reward_threshold, 0, len(test_rewards), color='y')
+    # plt.hlines(reward_threshold, 0, len(test_rewards), color='y')
     plt.legend(loc='lower right')
     plt.grid()
 
@@ -237,14 +237,14 @@ def plot_test_rewards(args, test_rewards, reward_threshold):
 def run_ppo(env, args):
     DISCOUNT_FACTOR = 0.99
     MAX_EPISODES = 10000
-    REWARD_THRESHOLD = 475
+    REWARD_THRESHOLD = 1000
     PRINT_INTERVAL = 10
     PPO_STEPS = 8 # MAYBE CHANGE THIS
     N_TRIALS = 100
     EPSILON = 0.2
     ENTROPY_COEFF = 0.01
     HIDDEN_DIM = 64
-    DROPOUT = 0.1
+    DROPOUT = 0
     LR = 1e-4
 
     n_actions = env.action_space.n
@@ -267,7 +267,6 @@ def run_ppo(env, args):
     optimizer = torch.optim.Adam(agent.parameters(), lr=LR)
 
     for episode in range(1, MAX_EPISODES+1):
-        print(f"RUNNING EPISODE {episode}")
         train_reward, states, actions, actions_log_prob, advantages, returns = forward_pass(env, agent, optimizer, DISCOUNT_FACTOR)
         policy_loss, value_loss = update_policy(
             agent,
@@ -304,6 +303,10 @@ def run_ppo(env, args):
     plot_train_rewards(args, train_rewards, REWARD_THRESHOLD)
     plot_test_rewards(args, test_rewards, REWARD_THRESHOLD)
 
+
+    os.makedirs("./models", exist_ok=True)
+    torch.save(agent.state_dict(), "./models/model.pt")
+
     env.close()
 
 def main():
@@ -311,6 +314,7 @@ def main():
 
     parser.add_argument('--env', type=str, required=True, help='Name of the environment to use')
     parser.add_argument('--human-view', action='store_true', help='Whether you want to see the environment or not')
+    parser.add_argument('--record-output', action='store_true', help='Whether you want to see the environment or not')
 
     args = parser.parse_args()
 
@@ -329,8 +333,12 @@ def main():
 
     if args.env == 'pong':
         env = AtariARIWrapper(env)
+        env = RewardWrapper(env)
 
-    env = RecordVideo(env=env, video_folder="./videos", name_prefix="test-video", episode_trigger=lambda x: x % 400 == 0)
+
+    if args.record_output:
+        os.makedirs("./videos", exist_ok=True)
+        env = RecordVideo(env=env, video_folder="./videos", name_prefix="test-video", episode_trigger=lambda x: x % 400 == 0)
 
     run_ppo(env, args)
 
