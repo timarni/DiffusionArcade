@@ -30,43 +30,60 @@ from pong import Pong
 ### Hyper-parameters for Q-learning
 EPISODES = 2000 # nbr of games
 MAX_STEPS = 30_000 # max_setps per episode as a safety break
-ALPHA = 1e-04 # learning‑rate
-GAMMA = 0.99 # discount
+ALPHA = 1e-01 # learning‑rate
+GAMMA = 0.95 # discount
 EPSILON_START = 1.0 # ε‑greedy exploration schedule (with proba ε take a random action and with proba 1-ε action with the highest Q-value)
 EPSILON_END = 0.05
-EPSILON_DECAY_LEN = EPISODES # linearly decay over whole run
-STATE_BINS = (12, 12, 8, 12, 3, 3, 12) # discretisation for y, y‑vel, x, y, vx, vy, y
+EPSILON_DECAY_LEN = EPISODES // 2  # linearly decay over whole run
+STATE_BINS = (6, 6, 4, 6, 3, 3, 6)  #(12, 12, 8, 12, 3, 3, 12) # discretisation for y, y‑vel, x, y, vx, vy, y
+REWARD_POLICY = 'enhanced'
 
 ### Evaluations for debugging
 EVAL_AGENT_SCORE = True
 EVAL_CPU_SCORE = True
 
 ### Game setting
-CPU_SPEED_RATIO = 0.015  # 0.6
-PLAYERS_SPEED_RATIO = 0.01  # 0.4
+CPU_SPEED_RATIO = 0.01  # 0.6
+PLAYERS_SPEED_RATIO = 0.015  # 0.4
 BALL_SPEED_RATIO = 0.02
-
-recording = True
 
 ### Helper functions
 def discretise(state: dict) -> tuple:
     """Convert the raw dict into a small, hashable tuple.
     Because storing continous values in a Q-table needs a lot of memory"""
-    py, pvy = state["player_y"], state["player_velocity"]
-    cy = state["cpu_y"]
-    bx, by = state["ball_x"], state["ball_y"]
-    bvx, bvy = state["ball_velocity_x"], state["ball_velocity_y"]
+
+    def bucketize(val, max_val, bins):
+        bin_size = max_val / bins
+        return min(bins - 1, max(0, int(val // bin_size)))
+    
+    py = bucketize(state["player_y"], 48, STATE_BINS[0])
+    pvy = bucketize(state["player_velocity"], 15, STATE_BINS[1])
+    cy = bucketize(state["cpu_y"], 48, STATE_BINS[2])
+    bx = bucketize(state["ball_x"], 64, STATE_BINS[3])
+    by = bucketize(state["ball_y"], 48, STATE_BINS[4])
+    bvx = int((state["ball_velocity_x"] > 0) - (state["ball_velocity_x"] < 0))
+    bvy = int((state["ball_velocity_y"] > 0) - (state["ball_velocity_y"] < 0))
+
+    return (
+        py,
+        pvy,
+        cy,
+        bx,
+        by,
+        bvx,
+        bvy
+    )
 
     # Simple hash: put each value in a rough bucket
-    return (
-        int(py // (48 / STATE_BINS[0])),
-        int(pvy // (15 / STATE_BINS[1])),
-        int(cy // (48 / STATE_BINS[2])),
-        int(bx // (64 / STATE_BINS[3])),
-        int(by // (48 / STATE_BINS[6])),
-        int((bvx > 0) - (bvx < 0)), # -1, 0, or +1
-        int((bvy > 0) - (bvy < 0)),
-    )
+    # return (
+    #     int(py // (48 / STATE_BINS[0])),
+    #     int(pvy // (15 / STATE_BINS[1])),
+    #     int(cy // (48 / STATE_BINS[2])),
+    #     int(bx // (64 / STATE_BINS[3])),
+    #     int(by // (48 / STATE_BINS[6])),
+    #     int((bvx > 0) - (bvx < 0)), # -1, 0, or +1
+    #     int((bvy > 0) - (bvy < 0)),
+    # )
 
 
 def epsilon_by_episode(ep):
@@ -115,13 +132,23 @@ def plot_scores_per_episode(scores_agent, scores_cpu, run_stamp):
     print(f"Plot return per episode saved to: logs/score_curve_{run_stamp}.png")
 
 
+def linear_decay_alpha(ep, total_episodes=1000, start=0.1, end=1e-06):
+    alpha = start - (start - end) * (ep / total_episodes)
+    return max(end, alpha)
+
+
+def exp_decay_alpha(ep, total_episodes=500, start=0.1, end=1e-6):
+    decay_rate = np.log(end / start) / total_episodes
+    return start * np.exp(decay_rate * ep)
+
+
 def train_agent(fps=30, display_screen=False, recording=True):
     ### PLE set‑up
     game = Pong(width=64, height=48, MAX_SCORE=11, 
                 cpu_speed_ratio=CPU_SPEED_RATIO, 
                 players_speed_ratio=PLAYERS_SPEED_RATIO,
                 ball_speed_ratio=BALL_SPEED_RATIO, 
-                reward_policy='enhanced')
+                reward_policy=REWARD_POLICY)
     env = PLE(game, fps=fps, display_screen=display_screen) # display mode -> set fps=30 and display_screen = True
     env.init()
     ACTIONS = env.getActionSet() # [K_UP, K_DOWN, None]
@@ -130,8 +157,9 @@ def train_agent(fps=30, display_screen=False, recording=True):
     ### create Q‑table & logging CSV
     Q = defaultdict(lambda: [0.0] * len(ACTIONS))
 
+    run_stamp = datetime.now().strftime("%Y‑%m‑%d_%H‑%M‑%S")
+
     if recording:
-        run_stamp = datetime.now().strftime("%Y‑%m‑%d_%H‑%M‑%S")
         os.makedirs("logs", exist_ok=True)
         csv_path = f"logs/pong_states_{run_stamp}.csv"
 
@@ -195,6 +223,7 @@ def train_agent(fps=30, display_screen=False, recording=True):
 
             # Q‑learning update
             best_next = max(Q[next_state])
+            ALPHA = exp_decay_alpha(ep, EPISODES, start=0.1, end=1e-03)  #max(1e-06, 0.1 * (0.995 ** ep))
             Q[state][ACTION_IDX[action]] += ALPHA * (
                 reward + GAMMA * best_next - Q[state][ACTION_IDX[action]]
             )
@@ -225,12 +254,12 @@ def train_agent(fps=30, display_screen=False, recording=True):
             ret_csv.writerow([ep, total_reward])
 
         if (ep + 1) % 50 == 0:
-            print(f"[{ep + 1}/{EPISODES}] ε = {eps:.3f} | steps so far: {total_steps}")
+            print(f"[{ep + 1}/{EPISODES}] ε = {eps:.3f}, lr = {ALPHA:.6f} | steps so far: {total_steps}")
 
     if recording:
         f_csv.close()
 
-    print(f"\nFinished. Every state was appended to {csv_path}")
+        print(f"\nFinished. Every state was appended to {csv_path}")
 
     os.makedirs("agents", exist_ok=True)
     agent_path = f"agents/q_table_{run_stamp}.pkl"
@@ -267,8 +296,9 @@ def evaluate_agent(Q, games=100, fps=1000, display=False):
             env.act(best_a)
             state = discretise(env.getGameState())
 
+        print(f"game scores:  {game.score_counts['agent']} : {game.score_counts['cpu']}")
         if game.score_counts["agent"] > game.score_counts["cpu"]:
-            print(f"game scores:  {game.score_counts['agent']} : {game.score_counts['cpu']}")
+            # print(f"game scores:  {game.score_counts['agent']} : {game.score_counts['cpu']}")
             wins += 1
 
     # 2. Report
@@ -281,23 +311,23 @@ def evaluate_agent(Q, games=100, fps=1000, display=False):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--recording", type=bool, default=True)
+    parser.add_argument("--no_recording", action="store_true", help="Disable recording (default: enabled)")
     parser.add_argument("--fps", type=int, default=30)
-    parser.add_argument("--display", type=int, default=False)
-    parser.add_argument("--eval", type=bool, default=True)
-    parser.add_argument("--plot", type=bool, default=True)
-    parser.add_argument("--eval_vis", type=bool, default=False)
+    parser.add_argument("--display", action="store_true", help="Enable recording (default: disabled)")
+    parser.add_argument("--no_eval", action="store_true", help="Disable eval (default: enabled)")
+    parser.add_argument("--no_plot", action="store_true", help="Disable plotting (default: enabled)")
+    parser.add_argument("--eval_vis", action="store_true", help="Enable evaluation visualization (default: disabled)")
     args = parser.parse_args()
 
     # TRAINING
     episode_returns, agent_score_per_ep, cpu_score_per_ep, run_stamp, Q = train_agent(
         fps=args.fps,
         display_screen=args.display,
-        recording=args.recording
+        recording=not args.no_recording
     )
 
     # Plot learning curves
-    if args.plot:
+    if not args.no_plot:
         print("\n Generate learning curve plots")
         plot_agent_return(
             episode_returns=episode_returns,
@@ -309,7 +339,7 @@ def main():
         )
 
     # EVALUATION
-    if args.eval:
+    if not args.no_eval:
         print("\nRunning evaluation...")
         evaluate_agent(
             Q,
