@@ -1,16 +1,18 @@
-import gymnasium
+import gymnasium as gym
 import numpy as np
 from constants import *
 
-class RewardWrapper(gymnasium.Wrapper):
+class RewardWrapper(gym.Wrapper):
     def __init__(self, env):
         super().__init__(env)
         self.old_info = None  # Stores previous step info
         self.old_direction = None
+        self.mid_position = None
     
     def reset(self, **kwargs):
         obs, info = self.env.reset(**kwargs)
         self.old_info = None  # Clear on reset
+        self.mid_position = info.get('labels', None)['player_y'] # Get the starting point of the paddle as the mid point
         return obs, info
 
     def step(self, action):
@@ -23,8 +25,10 @@ class RewardWrapper(gymnasium.Wrapper):
         return obs, reward, terminated, truncated, info
 
     def modify_reward(self, obs, info, old_info, terminated):
+        reward = 0
+
         if old_info == None:
-            return 0
+            return reward
 
         # Get the labels if they exist
         labels = info.get('labels', None)
@@ -32,17 +36,23 @@ class RewardWrapper(gymnasium.Wrapper):
 
         # Check if anything reward-worthy happened
         if self.scored(labels, old_labels):
-            return SCORE_REWARD
+            reward += SCORE_REWARD
         # if self.opponent_scored(labels, old_labels):
         #     return -SCORE_REWARD
         if self.returned_ball(labels, old_labels):
-            return BOUNCE_REWARD
+            reward += BOUNCE_REWARD
         # if self.big_movement(labels, old_labels):
         #     return BIG_MOVE_REWARD
         if labels['player_score'] == 21:
-            return WIN_REWARD
+            reward += WIN_REWARD
+
+        # if labels['player_y'] != old_labels['player_y']:
+        #     reward += MOVE_REWARD 
+
+        if np.abs(labels['player_y']-self.mid_position) > 40:
+            reward += AT_THE_EDGE
         
-        return 0
+        return reward
 
     """
     Checks if the ball was rebounded from the player side

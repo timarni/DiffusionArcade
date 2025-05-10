@@ -1,0 +1,7 @@
+torch
+torchvision
+numpy
+gymnasium[atari]
+git+https://github.com/colin-a-smyth/atari-representation-learning.git
+matplotlib
+moviepy

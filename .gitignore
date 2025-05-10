@@ -1,4 +1,6 @@
 logs/
 frames/
-PPO_torch/videos
-PPO_torch/images
+PPO_ALE/videos/*
+PPO_ALE/images/*
+PPO_ALE/ppo_env/*
+

@@ -1,4 +1,3 @@
-from tqdm import tqdm
 import os
 import argparse
 
@@ -8,28 +7,24 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import distributions
-from torch.utils.data import DataLoader, TensorDataset
+# from torch.utils.data import DataLoader, TensorDataset
+from torch.optim.lr_scheduler import LambdaLR
 
 import matplotlib.pyplot as plt
 import numpy as np
 import gymnasium as gym
-from gym.wrappers import RecordVideo, RecordEpisodeStatistics
+from gym.wrappers import RecordVideo
 from reward_wrapper import RewardWrapper
 
 import ale_py
 from atariari.benchmark.wrapper import AtariARIWrapper
 
-from collections import defaultdict
-
 from policy_network import PolicyNetwork, ActorCritic
 from policy_network_conv import PolicyNetworkConv, ActorCriticConv
 
 import time
-timestr = time.strftime("%Y%m%d-%H%M%S")
 
-# game = Pong(width=64, height=48, MAX_SCORE=11, ball_speed_ratio=0.2, cpu_speed_ratio=0.05, players_speed_ratio=0.01)
-# env = PLE(game, fps=60, display_screen=False) # display mode -> set fps=30 and display_screen = True
-# env.init()
+run_stamp = time.strftime("%Y-%m-%d_%H-%M-%S")
 
 def create_agent(n_observation, n_actions, hidden_dim, dropout):
 
@@ -60,7 +55,7 @@ def get_returns(rewards, discount_factor):
         returns.insert(0, cum_reward)
 
     returns = torch.tensor(returns) # Make it a tensor
-    returns = (returns - returns.mean()) / (returns.std() + 1e-8)# Normalise
+    returns = (returns - returns.mean()) / (returns.std() + 1e-8) # Normalise
     return returns
 
 def calculate_advantages(returns, values):
@@ -75,19 +70,19 @@ def clipped_loss(old_log_action_prob, new_log_action_prob, eps, advantages):
     advantages = advantages.detach()
     policy_ratio = torch.exp(new_log_action_prob)/torch.exp(old_log_action_prob)
 
-    loss_1 = policy_ratio * advantages
+    loss_1 = policy_ratio * advantages # Loss 1
 
     clamped_policy_ratio = torch.clamp(policy_ratio, 1-eps, 1+eps)
 
-    loss_2 = clamped_policy_ratio * advantages
+    loss_2 = clamped_policy_ratio * advantages # Loss 2 - the clamped one
 
-    loss = torch.min(loss_1, loss_2)
+    loss = torch.min(loss_1, loss_2) # We take the smaller of the two
 
     return loss
 
 def calculate_losses(loss, entropy, entropy_bonus, returns, value_pred):
     policy_loss = -(loss + entropy * entropy_bonus).sum()
-    value_loss = F.mse_loss(returns, value_pred).sum()
+    value_loss = F.mse_loss(returns, value_pred).sum() * 0.5
 
     return policy_loss, value_loss
 
@@ -216,7 +211,7 @@ def plot_train_rewards(args, train_rewards, reward_threshold):
     os.makedirs(output_dir, exist_ok=True)
 
     # Save plot
-    plt.savefig(f"{output_dir}/train_rewards_CartPole_{timestr}.png")
+    plt.savefig(f"{output_dir}/train_rewards_CartPole_{run_stamp}.png")
 
 def plot_test_rewards(args, test_rewards, reward_threshold):
     plt.figure(figsize=(12, 8))
@@ -232,11 +227,11 @@ def plot_test_rewards(args, test_rewards, reward_threshold):
     os.makedirs(output_dir, exist_ok=True)
 
     # Save plot
-    plt.savefig(f"{output_dir}/test_rewards_CartPole_{timestr}.png")
+    plt.savefig(f"{output_dir}/test_rewards_CartPole_{run_stamp}.png")
 
 def run_ppo(env, args):
     DISCOUNT_FACTOR = 0.99
-    MAX_EPISODES = 10000
+    MAX_EPISODES = args.max_episodes
     REWARD_THRESHOLD = 1000
     PRINT_INTERVAL = 10
     PPO_STEPS = 8 # MAYBE CHANGE THIS
@@ -244,7 +239,7 @@ def run_ppo(env, args):
     EPSILON = 0.2
     ENTROPY_COEFF = 0.01
     HIDDEN_DIM = 64
-    DROPOUT = 0
+    DROPOUT = 0.1
     LR = 1e-4
 
     n_actions = env.action_space.n
@@ -253,10 +248,11 @@ def run_ppo(env, args):
 
     n_observations = len(info['labels'].values())
 
-    print("n_actions:\t", n_actions)
-    print("n_observations:\t", n_observations)
-
-    n_rows, n_cols, channels = state.shape
+    print('-' * 50)
+    print(f"RUNNING TRAINING FOR ENVIRONMENT -> {args.env}")
+    print("MAX EPISODES:\t", MAX_EPISODES)
+    print("PRINT INTERVAL:\t", PRINT_INTERVAL)
+    print('-' * 50)
 
     train_rewards = []
     test_rewards = []
@@ -265,6 +261,8 @@ def run_ppo(env, args):
     agent = create_agent(n_observations, n_actions, HIDDEN_DIM, DROPOUT)
 
     optimizer = torch.optim.Adam(agent.parameters(), lr=LR)
+
+    scheduler = LambdaLR(optimizer, lr_lambda=lambda epoch: 1 - epoch / MAX_EPISODES)
 
     for episode in range(1, MAX_EPISODES+1):
         train_reward, states, actions, actions_log_prob, advantages, returns = forward_pass(env, agent, optimizer, DISCOUNT_FACTOR)
@@ -290,6 +288,9 @@ def run_ppo(env, args):
         mean_test_rewards = np.mean(test_rewards[-N_TRIALS:])
         mean_abs_policy_loss = np.mean(np.abs(policy_losses[-N_TRIALS:]))
         mean_abs_value_loss = np.mean(np.abs(value_losses[-N_TRIALS:]))
+
+        scheduler.step()
+
         if episode % PRINT_INTERVAL == 0:
             print(f'Episode: {episode:3} | \
                   Mean Train Rewards: {mean_train_rewards:3.1f} \
@@ -300,19 +301,53 @@ def run_ppo(env, args):
             print(f'Reached reward threshold in {episode} episodes')
             break
 
-    plot_train_rewards(args, train_rewards, REWARD_THRESHOLD)
-    plot_test_rewards(args, test_rewards, REWARD_THRESHOLD)
+    # plot_train_rewards(args, train_rewards, REWARD_THRESHOLD)
+    # plot_test_rewards(args, test_rewards, REWARD_THRESHOLD)
 
+    plot_agent_return(args, train_rewards, run_stamp, is_training_run=True)
+    plot_agent_return(args, test_rewards, run_stamp, is_training_run=False)
 
     os.makedirs("./models", exist_ok=True)
     torch.save(agent.state_dict(), "./models/model.pt")
 
     env.close()
 
+def plot_agent_return(args, episode_returns, run_stamp, is_training_run):
+    # Plot return per episode
+    window = 50
+    returns = np.array(episode_returns, dtype=float)
+    # simple centred moving average (same length as data)
+    kernel = np.ones(window) / window
+    ma = np.convolve(returns, kernel, mode="same")
+
+    plt.figure(figsize=(8, 4))
+    plt.plot(returns, label="Episode return", alpha=0.3)
+    plt.plot(ma, label=f"{window}-episode moving avg")
+    plt.xlabel("Episode")
+    plt.ylabel("Total reward")
+    if is_training_run:
+        plt.title("Training curve – Pong Q‑learning")
+    else:
+        plt.title("Testing curve – Pong Q‑learning")
+    plt.legend()
+    plt.tight_layout()
+
+    output_dir = f"images/{args.env}"
+    os.makedirs(output_dir, exist_ok=True)
+
+    if is_training_run:
+        plt.savefig(f"images/{args.env}/return_curve_train_{run_stamp}.png")
+        print(f"Plot return per episode saved to: logs/return_curve_train_{run_stamp}.png")
+    else:
+        plt.savefig(f"images/{args.env}/return_curve_test_{run_stamp}.png")
+        print(f"Plot return per episode saved to: logs/return_curve_test_{run_stamp}.png")
+        
+
 def main():
     parser = argparse.ArgumentParser(description="A simple script with arguments.")
 
     parser.add_argument('--env', type=str, required=True, help='Name of the environment to use')
+    parser.add_argument('--max-episodes', type=int, required=True, help='Whether you want to see the environment or not')
     parser.add_argument('--human-view', action='store_true', help='Whether you want to see the environment or not')
     parser.add_argument('--record-output', action='store_true', help='Whether you want to see the environment or not')
 
@@ -335,10 +370,9 @@ def main():
         env = AtariARIWrapper(env)
         env = RewardWrapper(env)
 
-
     if args.record_output:
-        os.makedirs("./videos", exist_ok=True)
-        env = RecordVideo(env=env, video_folder="./videos", name_prefix="test-video", episode_trigger=lambda x: x % 400 == 0)
+        os.makedirs("./videos/run_{run_stamp}", exist_ok=True)
+        env = RecordVideo(env=env, video_folder=f"./videos/run_{run_stamp}", name_prefix="test-video", episode_trigger=lambda x: (x+1) % 1000 == 0)
 
     run_ppo(env, args)
 
