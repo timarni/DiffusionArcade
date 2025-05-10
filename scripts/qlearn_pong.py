@@ -33,10 +33,10 @@ MAX_STEPS = 30_000 # max_setps per episode as a safety break
 ALPHA = 1e-01 # learning‑rate
 GAMMA = 0.95 # discount
 EPSILON_START = 1.0 # ε‑greedy exploration schedule (with proba ε take a random action and with proba 1-ε action with the highest Q-value)
-EPSILON_END = 0.05
-EPSILON_DECAY_LEN = EPISODES // 2  # linearly decay over whole run
+EPSILON_END = 0.1
+EPSILON_DECAY_LEN = int(0.9*EPISODES)  # linearly decay over whole run
 STATE_BINS = (6, 6, 4, 6, 3, 3, 6)  #(12, 12, 8, 12, 3, 3, 12) # discretisation for y, y‑vel, x, y, vx, vy, y
-REWARD_POLICY = 'enhanced'
+REWARD_POLICY = 'enhanced_2'
 
 ### Evaluations for debugging
 EVAL_AGENT_SCORE = True
