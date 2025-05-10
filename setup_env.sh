@@ -1,5 +1,7 @@
 #!/bin/bash
 
+eval "$(conda shell.bash hook)"
+
 echo "Creating conda environment..."
 conda create -n diffusion_arcade python=3.10 -y
 source activate diffusion_arcade
