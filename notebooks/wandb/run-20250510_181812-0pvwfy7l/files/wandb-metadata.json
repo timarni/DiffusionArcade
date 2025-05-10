@@ -1,0 +1,97 @@
+{
+  "os": "Linux-5.14.0-70.30.1.el9_0.x86_64-x86_64-with-glibc2.34",
+  "python": "CPython 3.10.16",
+  "startedAt": "2025-05-10T16:18:12.987279Z",
+  "program": "notebooks/diffusion_model.ipynb",
+  "git": {
+    "remote": "https://github.com/timarni/DiffusionArcade",
+    "commit": "c6d94ac9f0d1382c5cf4a23ce0c2ed8c43c7c5cd"
+  },
+  "email": "adriana.orellana.torrico@gmail.com",
+  "root": "/home/aorellan/DiffusionArcade/notebooks",
+  "host": "i02",
+  "executable": "/home/aorellan/miniconda3/envs/diffusion_arcade/bin/python",
+  "cpu_count": 40,
+  "cpu_count_logical": 40,
+  "gpu": "Tesla V100-PCIE-32GB",
+  "gpu_count": 1,
+  "disk": {
+    "/": {
+      "total": "53660876800",
+      "used": "7283396608"
+    }
+  },
+  "memory": {
+    "total": "201910202368"
+  },
+  "cpu": {
+    "count": 40,
+    "countLogical": 40
+  },
+  "gpu_nvidia": [
+    {
+      "name": "Tesla V100-PCIE-32GB",
+      "memoryTotal": "34359738368",
+      "cudaCores": 5120,
+      "architecture": "Volta"
+    }
+  ],
+  "slurm": {
+    "cluster_name": "izar",
+    "conf": "/var/spool/slurmd/conf-cache/slurm.conf",
+    "cpu_bind": "quiet,mask_cpu:0x0000100000",
+    "cpu_bind_list": "0x0000100000",
+    "cpu_bind_type": "mask_cpu:",
+    "cpu_bind_verbose": "quiet",
+    "cpus_on_node": "1",
+    "distribution": "cyclic",
+    "gpus_on_node": "1",
+    "gtids": "0",
+    "job_account": "cs-503",
+    "job_cpus_per_node": "1",
+    "job_end_time": "1746907360",
+    "job_gid": "30146",
+    "job_group": "in-pme-unit",
+    "job_id": "2631166",
+    "job_name": "bash",
+    "job_nodelist": "i02",
+    "job_num_nodes": "1",
+    "job_partition": "gpu",
+    "job_qos": "cs-503",
+    "job_start_time": "1746882160",
+    "job_uid": "277792",
+    "job_user": "aorellan",
+    "jobid": "2631166",
+    "launch_node_ipaddr": "10.91.24.11",
+    "localid": "0",
+    "mem_per_node": "16384",
+    "nnodes": "1",
+    "nodeid": "0",
+    "nodelist": "i02",
+    "nprocs": "1",
+    "ntasks": "1",
+    "procid": "0",
+    "pty_port": "36499",
+    "pty_win_col": "125",
+    "pty_win_row": "29",
+    "script_context": "prolog_task",
+    "srun_comm_host": "10.91.24.11",
+    "srun_comm_port": "38521",
+    "step_gpus": "1",
+    "step_id": "0",
+    "step_launcher_port": "38521",
+    "step_nodelist": "i02",
+    "step_num_nodes": "1",
+    "step_num_tasks": "1",
+    "step_tasks_per_node": "1",
+    "stepid": "0",
+    "submit_dir": "/home/aorellan",
+    "submit_host": "izar1",
+    "task_pid": "370509",
+    "tasks_per_node": "1",
+    "topology_addr": "t1.ibsw3.i02",
+    "topology_addr_pattern": "switch.switch.node",
+    "umask": "0022"
+  },
+  "cudaVersion": "12.2"
+}

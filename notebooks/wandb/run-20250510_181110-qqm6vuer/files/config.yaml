@@ -1,0 +1,72 @@
+_wandb:
+    value:
+        cli_version: 0.19.11
+        m: []
+        python_version: 3.10.16
+        t:
+            "1":
+                - 1
+                - 11
+                - 41
+                - 49
+                - 51
+                - 55
+                - 71
+                - 83
+            "2":
+                - 1
+                - 11
+                - 41
+                - 49
+                - 51
+                - 55
+                - 71
+                - 83
+            "3":
+                - 13
+                - 16
+                - 23
+                - 55
+                - 61
+            "4": 3.10.16
+            "5": 0.19.11
+            "6": 4.51.3
+            "8":
+                - 1
+                - 5
+            "12": 0.19.11
+            "13": linux-x86_64
+model:
+    value:
+        block_out_channels:
+            - 64
+            - 128
+            - 128
+            - 256
+        down_block_types:
+            - DownBlock2D
+            - DownBlock2D
+            - AttnDownBlock2D
+            - AttnDownBlock2D
+        layers_per_block: 2
+        up_block_types:
+            - AttnUpBlock2D
+            - AttnUpBlock2D
+            - UpBlock2D
+            - UpBlock2D
+training:
+    value:
+        batch_size: 32
+        beta_schedule: squaredcos_cap_v2
+        epochs: 8
+        image_size: 64
+        in_channels: 3
+        learning_rate: 0.0004
+        num_inference_steps: 100
+        out_channels: 3
+        timesteps: 1000
+wandb:
+    value:
+        entity: adriana-orellana-torrico
+        project: diffusion-arcade
+        run_name: diffusion-model
