@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import wandb
 import yaml
 
-from diffusers import UNet2DModel, DDIMScheduler
+from diffusers import UNet2DModel, DDIMScheduler, DDPMScheduler
 from huggingface_hub import login
 from dotenv import load_dotenv
 from tqdm import tqdm
@@ -72,7 +72,7 @@ class DiffusionModel:
             up_block_types=up_block_types,
         ).to(self.device)
 
-        self.scheduler = DDIMScheduler(
+        self.scheduler = DDPMScheduler(
             num_train_timesteps=timesteps,
             beta_schedule=beta_schedule
         )
