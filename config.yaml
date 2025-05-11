@@ -2,7 +2,7 @@ training:
   epochs: 30
   learning_rate: 0.0004
   batch_size: 32
-  image_size: 32
+  image_size: 128
   in_channels: 3
   out_channels: 3
   timesteps: 1000

@@ -102,7 +102,7 @@ class DiffusionModel:
 
             loop = tqdm(train_dataloader, desc=f"Epoch {epoch+1}/{epochs}")
             for batch in loop:
-                clean_images = batch["images"].to(self.device)
+                clean_images = batch["image"].to(self.device)
                 noise = torch.randn_like(clean_images)
                 timesteps = torch.randint(
                     0,
@@ -138,7 +138,7 @@ class DiffusionModel:
 
                 with torch.no_grad():
                     for batch in val_dataloader:
-                        clean_images = batch["images"].to(self.device)
+                        clean_images = batch["image"].to(self.device)
                         noise = torch.randn_like(clean_images)
                         timesteps = torch.randint(
                             0,
