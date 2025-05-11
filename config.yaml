@@ -26,4 +26,4 @@ model:
 wandb:
   project: "diffusion-arcade"
   entity: "adriana-orellana-torrico"
-  run_name: "diffusion-model-ddpm"
+  run_name: "diffusion-model-with_latents"
