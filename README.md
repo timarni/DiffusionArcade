@@ -1,6 +1,6 @@
 # DiffusionArcade
 
-DiffusionArcade is a research project that combines **diffusion models** and **reinforcement learning** to generate and analyze gameplay, with a focus on the classic game **Pong**. It includes modules for training generative models on game frames and learning optimal actions via Q-learning.
+A project that combines diffusion models with reinforcement learning for Pong game generation.
 
 ---
 
