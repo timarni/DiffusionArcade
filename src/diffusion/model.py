@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import wandb
 import yaml
 
-from diffusers import UNet2DModel, DDIMScheduler
+from diffusers import UNet2DModel, DDIMScheduler, AutoencoderKL
 from huggingface_hub import login
 from dotenv import load_dotenv
 from tqdm import tqdm
@@ -37,6 +37,7 @@ class DiffusionModel:
     def __init__(
         self,
         image_size: int,
+        vae: AutoencoderKL,
         in_channels: int = 3,
         out_channels: int = 3,
         device: torch.device = None,
@@ -62,8 +63,13 @@ class DiffusionModel:
         """
         self.device = device or (torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"))
 
+        self.vae = vae
+        self.vae_scale = vae.config.scaling_factor
+
+        latent_grid_size = image_size // 8
+
         self.model = UNet2DModel(
-            sample_size=image_size,
+            sample_size=latent_grid_size,
             in_channels=in_channels,
             out_channels=out_channels,
             layers_per_block=layers_per_block,
@@ -102,7 +108,7 @@ class DiffusionModel:
 
             loop = tqdm(train_dataloader, desc=f"Epoch {epoch+1}/{epochs}")
             for batch in loop:
-                clean_images = batch["images"].to(self.device)
+                clean_images = batch["latents"].to(self.device)
                 noise = torch.randn_like(clean_images)
                 timesteps = torch.randint(
                     0,
@@ -138,7 +144,7 @@ class DiffusionModel:
 
                 with torch.no_grad():
                     for batch in val_dataloader:
-                        clean_images = batch["images"].to(self.device)
+                        clean_images = batch["latents"].to(self.device)
                         noise = torch.randn_like(clean_images)
                         timesteps = torch.randint(
                             0,
@@ -165,7 +171,6 @@ class DiffusionModel:
                     log_data["epoch/val_loss"] = avg_val_loss
                 wandb.log(log_data, step=global_step)
 
-            # Print summary
             val_str = f"{avg_val_loss:.4f}" if avg_val_loss is not None else "N/A"
             print(
                 f"Epoch [{epoch+1}/{epochs}] "
@@ -178,19 +183,26 @@ class DiffusionModel:
     def generate(
         self,
         n_images: int = 8,
-        n_channels: int = 3,
+        latent_channels: int = 4,
         num_inference_steps: int = 100,
     ):
         """Generate images from noise"""
         # Set timesteps for inference
         self.scheduler.set_timesteps(num_inference_steps)
 
+        # Latent grid size
+        latent_height = self.model.sample_size
+        latent_width = self.model.sample_size
+
         # Start from pure noise
-        sample = torch.randn(n_images, n_channels, self.model.sample_size, self.model.sample_size).to(self.device)
+        sample = torch.randn(n_images, latent_channels, latent_height, latent_width, device=self.device)
 
         for t in self.scheduler.timesteps:
             with torch.no_grad():
                 residual = self.model(sample, t).sample
             sample = self.scheduler.step(residual, t, sample).prev_sample
 
-        return sample
+        with torch.no_grad():
+            images = self.vae.decode(sample / self.vae_scale).sample
+
+        return images
