@@ -1,3 +1,4 @@
+# TO BE EDITED
 # Using PLE to train a RL agent at Pong and recording the Game States
 
 * Run `bash setup_ple_env.sh` to import all the necessary libraries (make sure to make it executable by `chmod +x setup_ple_env.sh`)
