@@ -3,6 +3,7 @@ import torch
 import torch.nn.functional as F
 import wandb
 import yaml
+import math
 
 from diffusers import UNet2DModel, DDIMScheduler, DDPMScheduler, AutoencoderKL
 from huggingface_hub import login

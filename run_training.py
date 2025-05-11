@@ -15,12 +15,12 @@ def main():
     }
 
     model = DiffusionModel(
-        image_size=config['training']['image_size'],
-        in_channels=config['training']['in_channels'],
-        out_channels=config['training']['out_channels'],
+        image_size=config['training_images']['image_size'],
+        in_channels=config['training_images']['in_channels'],
+        out_channels=config['training_images']['out_channels'],
         device=device,
-        timesteps=config['training']['timesteps'],
-        beta_schedule=config['training']['beta_schedule'],
+        timesteps=config['training_images']['timesteps'],
+        beta_schedule=config['training_images']['beta_schedule'],
         block_out_channels=tuple(config['model']['block_out_channels']),
         layers_per_block=config['model']['layers_per_block'],
         down_block_types=tuple(config['model']['down_block_types']),
@@ -35,8 +35,8 @@ def main():
     model.train(
         train_dataloader=train_dataloader,
         val_dataloader=val_dataloader,
-        epochs=config['training']['epochs'],
-        lr=config['training']['learning_rate'],
+        epochs=config['training_images']['epochs'],
+        lr=config['training_images']['learning_rate'],
         wandb_config=config['wandb']
     )
 
