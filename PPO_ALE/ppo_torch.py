@@ -233,12 +233,12 @@ def run_ppo(env, args):
     DISCOUNT_FACTOR = 0.99
     MAX_EPISODES = args.max_episodes
     REWARD_THRESHOLD = 1000
-    PRINT_INTERVAL = 10
+    PRINT_INTERVAL = 50
     PPO_STEPS = 8 # MAYBE CHANGE THIS
     N_TRIALS = 100
     EPSILON = 0.2
     ENTROPY_COEFF = 0.01
-    HIDDEN_DIM = 64
+    HIDDEN_DIM = 128
     DROPOUT = 0.1
     LR = 1e-4
 
@@ -308,7 +308,7 @@ def run_ppo(env, args):
     plot_agent_return(args, test_rewards, run_stamp, is_training_run=False)
 
     os.makedirs("./models", exist_ok=True)
-    torch.save(agent.state_dict(), "./models/model.pt")
+    torch.save(agent.state_dict(), f"./models/model_{args.env}_{run_stamp}.pt")
 
     env.close()
 
@@ -326,9 +326,9 @@ def plot_agent_return(args, episode_returns, run_stamp, is_training_run):
     plt.xlabel("Episode")
     plt.ylabel("Total reward")
     if is_training_run:
-        plt.title("Training curve – Pong Q‑learning")
+        plt.title("Training curve – Pong PPO")
     else:
-        plt.title("Testing curve – Pong Q‑learning")
+        plt.title("Testing curve – Pong PPO")
     plt.legend()
     plt.tight_layout()
 
