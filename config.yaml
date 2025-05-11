@@ -1,0 +1,36 @@
+default_config: &default_config
+  epochs: 30
+  learning_rate: 0.0004
+  batch_size: 32
+  image_size: 128
+  timesteps: 1000
+  beta_schedule: "squaredcos_cap_v2"
+  num_inference_steps: 1000
+
+training_images:
+  <<: *default_config
+  in_channels: 1
+  out_channels: 1
+
+training_latents:
+  vae_name: "stabilityai/sd-vae-ft-mse"
+  <<: *default_config
+
+model:
+  block_out_channels: [64, 128, 128, 256]
+  layers_per_block: 2
+  down_block_types:
+    - "DownBlock2D"
+    - "DownBlock2D"
+    - "AttnDownBlock2D"
+    - "AttnDownBlock2D"
+  up_block_types:
+    - "AttnUpBlock2D"
+    - "AttnUpBlock2D"
+    - "UpBlock2D"
+    - "UpBlock2D"
+
+wandb:
+  project: "diffusion-arcade"
+  entity: "<YOUR WANDB USERNAME>"
+  run_name: "diffusion-model"
