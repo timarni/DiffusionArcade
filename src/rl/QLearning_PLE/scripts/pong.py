@@ -381,7 +381,7 @@ class Pong(PyGameWrapper):
             elif self.reward_policy == 'enhanced' or self.reward_policy == 'enhanced_2':
                 dist_to_ball = abs(self.agentPlayer.pos.y - self.ball.pos.y)
                 dist_factor = dist_to_ball / self.height
-                self.score_sum += 0.5*self.rewards["negative"] + dist_factor*self.rewards["negative"]
+                self.score_sum += self.rewards["negative"] + dist_factor*self.rewards["negative"]
             
             else:
                 raise ValueError("The given reward_policy (passed to Pong(...)) does not exist.")
@@ -395,6 +395,11 @@ class Pong(PyGameWrapper):
             self.score_counts["agent"] += 1.0
             self._reset_ball(1)
             is_terminal_state = True
+
+        # if self.reward_policy == 'enhanced_2':
+        #     self.score_sum -= 1e-06 * abs(self.agentPlayer.vel.y)  # penalize for moving
+        # max_penalty = 1.0  # tuning parameter
+        # move_penalty = max_penalty * (1 - (abs(self.vel.y) / max_possible_vel))
 
         epsilon = 0.01
         if abs((self.ball.pos.x - self.ball.radius/2) - (self.agentPlayer.pos.x + self.paddle_width/2)) < epsilon and self.agentPlayer.pos.y - self.paddle_height/2 <= self.ball.pos.y <= self.agentPlayer.pos.y + self.paddle_height/2:

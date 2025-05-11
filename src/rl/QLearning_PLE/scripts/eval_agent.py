@@ -15,25 +15,36 @@ import argparse
 import pickle
 
 from ple import PLE
-from ple.games.pong import Pong
+from pong import Pong
+# from ple.games.pong import Pong
 
 # --- must match training hyper‑params ---------------------------------------
-STATE_BINS = (12, 12, 8, 12, 3, 3, 12)      # discretisation used for the Q‑table
+STATE_BINS = (6, 6, 4, 6, 3, 3, 6)  #(12, 12, 8, 12, 3, 3, 12)      # discretisation used for the Q‑table
 
 def discretise(state: dict) -> tuple:
-    """Bucket continuous game values into integers (same as training)."""
-    py, pvy = state["player_y"], state["player_velocity"]
-    cy = state["cpu_y"]
-    bx, by = state["ball_x"], state["ball_y"]
-    bvx, bvy = state["ball_velocity_x"], state["ball_velocity_y"]
+    """Convert the raw dict into a small, hashable tuple.
+    Because storing continous values in a Q-table needs a lot of memory"""
+
+    def bucketize(val, max_val, bins):
+        bin_size = max_val / bins
+        return min(bins - 1, max(0, int(val // bin_size)))
+    
+    py = bucketize(state["player_y"], 48, STATE_BINS[0])
+    pvy = bucketize(state["player_velocity"], 15, STATE_BINS[1])
+    cy = bucketize(state["cpu_y"], 48, STATE_BINS[2])
+    bx = bucketize(state["ball_x"], 64, STATE_BINS[3])
+    by = bucketize(state["ball_y"], 48, STATE_BINS[4])
+    bvx = int((state["ball_velocity_x"] > 0) - (state["ball_velocity_x"] < 0))
+    bvy = int((state["ball_velocity_y"] > 0) - (state["ball_velocity_y"] < 0))
+
     return (
-        int(py  // (48 / STATE_BINS[0])),
-        int(pvy // (15 / STATE_BINS[1])),
-        int(cy  // (48 / STATE_BINS[2])),
-        int(bx  // (64 / STATE_BINS[3])),
-        int(by  // (48 / STATE_BINS[6])),
-        int((bvx > 0) - (bvx < 0)),   # −1, 0, +1
-        int((bvy > 0) - (bvy < 0)),
+        py,
+        pvy,
+        cy,
+        bx,
+        by,
+        bvx,
+        bvy
     )
 # ---------------------------------------------------------------------------
 
@@ -50,7 +61,9 @@ def main() -> None:
         Q = pickle.load(f)                # plain dict from training script
 
     # 2. Create game & env ----------------------------------------------------
-    game = Pong(width=64, height=48, MAX_SCORE=11, cpu_speed_ratio = 0.25, players_speed_ratio = 0.5, ball_speed_ratio = 1) # needs to be the same
+    game = Pong(width=64, height=48, MAX_SCORE=11, 
+                cpu_speed_ratio=0.01, players_speed_ratio=0.015, ball_speed_ratio=0.02)
+    # game = Pong(width=64, height=48, MAX_SCORE=11, cpu_speed_ratio=0.25, players_speed_ratio=0.5, ball_speed_ratio=1) # needs to be the same
     env = PLE(game, fps=args.fps, display_screen=args.display)
     env.init()
     ACTIONS = env.getActionSet() # [K_UP, K_DOWN]
@@ -68,17 +81,16 @@ def main() -> None:
             env.act(best_a)
             state = discretise(env.getGameState())
 
-        print(f"game scores:  {game.score_counts["agent"]} : {game.score_counts["cpu"]}")
-
-
+        print(f"game scores:  {game.score_counts['agent']} : {game.score_counts['cpu']}")
         if game.score_counts["agent"] > game.score_counts["cpu"]:
-            print(f"game scores:  {game.score_counts["agent"]} : {game.score_counts["cpu"]}")
+            # print(f"game scores:  {game.score_counts['agent']} : {game.score_counts['cpu']}")
             wins += 1
 
     # 4. Report ---------------------------------------------------------------
     print(f"\nEvaluated {args.games} episodes")
     print(f"Agent wins : {wins}")
     print(f"Win‑rate   : {wins/args.games:.2%}")
+
 
 if __name__ == "__main__":
     main()
