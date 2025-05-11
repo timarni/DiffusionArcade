@@ -37,6 +37,7 @@ class DiffusionModel:
     def __init__(
         self,
         image_size: int,
+        vae: AutoencoderKL,
         in_channels: int = 3,
         out_channels: int = 3,
         device: torch.device = None,
@@ -62,8 +63,13 @@ class DiffusionModel:
         """
         self.device = device or (torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"))
 
+        self.vae = vae
+        self.vae_scale = vae.config.scaling_factor
+
+        latent_grid_size = image_size // 8
+
         self.model = UNet2DModel(
-            sample_size=image_size,
+            sample_size=latent_grid_size,
             in_channels=in_channels,
             out_channels=out_channels,
             layers_per_block=layers_per_block,
@@ -165,7 +171,6 @@ class DiffusionModel:
                     log_data["epoch/val_loss"] = avg_val_loss
                 wandb.log(log_data, step=global_step)
 
-            # Print summary
             val_str = f"{avg_val_loss:.4f}" if avg_val_loss is not None else "N/A"
             print(
                 f"Epoch [{epoch+1}/{epochs}] "
