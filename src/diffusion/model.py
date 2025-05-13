@@ -3,9 +3,8 @@ import torch
 import torch.nn.functional as F
 import wandb
 import yaml
-import math
 
-from diffusers import UNet2DModel, DDIMScheduler, DDPMScheduler, AutoencoderKL
+from diffusers import UNet2DModel, DDIMScheduler, DDPMScheduler
 from huggingface_hub import login
 from dotenv import load_dotenv
 from tqdm import tqdm
@@ -205,8 +204,9 @@ class LatentDiffusionModel:
     """
     def __init__(
         self,
-        vae: AutoencoderKL,
         device: torch.device = None,
+        latent_channels: int = 4,
+        latent_size: int = 16,
         timesteps: int = 1000,
         beta_schedule: str = "squaredcos_cap_v2",
         block_out_channels: tuple = (64, 128, 128, 256),
@@ -229,14 +229,8 @@ class LatentDiffusionModel:
         """
         self.device = device or (torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"))
 
-        # VAE for encoding/decoding
-        self.vae = vae.eval().to(self.device)
-        self.vae.requires_grad_(False)
-        self.scale = self.vae.config.scaling_factor
-        
-        # latent shape
-        self.latent_channels = self.vae.config.latent_channels
-        self.latent_size = int(math.sqrt(self.vae.config.sample_size))
+        self.latent_channels = latent_channels
+        self.latent_size = latent_size
 
         # UNet in latent space
         self.model = UNet2DModel(
@@ -278,8 +272,8 @@ class LatentDiffusionModel:
             loop = tqdm(train_dataloader, desc=f"Epoch {epoch+1}/{epochs}")
 
             for batch in loop:
-                # Get latent vectors from batch
                 latents = batch["latents"].to(self.device)
+
                 noise = torch.randn_like(latents)
                 timesteps = torch.randint(
                     0,
@@ -310,10 +304,12 @@ class LatentDiffusionModel:
             avg_val_loss = None
             if val_dataloader:
                 self.model.eval()
+
                 val_losses_epoch = []
                 with torch.no_grad():
                     for batch in val_dataloader:
                         latents = batch["latents"].to(self.device)
+
                         noise = torch.randn_like(latents)
                         timesteps = torch.randint(
                             0,
@@ -321,9 +317,11 @@ class LatentDiffusionModel:
                             (latents.size(0),),
                             device=self.device
                         ).long()
+
                         noisy_latents = self.scheduler.add_noise(latents, noise, timesteps)
                         noise_pred = self.model(noisy_latents, timesteps).sample
                         val_losses_epoch.append(F.mse_loss(noise_pred, noise).item())
+
                         global_step += 1
 
                 avg_val_loss = sum(val_losses_epoch) / len(val_losses_epoch)
@@ -340,6 +338,7 @@ class LatentDiffusionModel:
 
         return train_losses, val_losses
 
+
     def generate_latents(
         self,
         n_samples: int = 8,
@@ -350,9 +349,7 @@ class LatentDiffusionModel:
         self.scheduler.set_timesteps(num_inference_steps)
 
         # start from Gaussian noise in latent space
-        latent_channels = self.vae.config.latent_channels
-        latent_size = int(math.sqrt(self.vae.config.sample_size))
-        latents = torch.randn(n_samples, latent_channels, latent_size, latent_size).to(self.device)
+        latents = torch.randn(n_samples, self.latent_channels, self.latent_size, self.latent_size).to(self.device)
 
         for t in self.scheduler.timesteps:
             with torch.no_grad():
@@ -360,24 +357,3 @@ class LatentDiffusionModel:
             latents = self.scheduler.step(noise_pred, t, latents).prev_sample
 
         return latents
-
-
-    def decode_latents(self, latents: torch.Tensor) -> torch.Tensor:
-        """Decode latent vectors to images"""
-        latents_scaled = latents / self.scale
-
-        with torch.no_grad():
-            decoded_imgs = self.vae.decode(latents_scaled).sample
-
-        return decoded_imgs.cpu()
-
-
-    def generate_images(
-        self,
-        n_samples: int = 8,
-        num_inference_steps: int = 100,
-    ) -> torch.Tensor:
-        """Generate images by sampling latents then decoding"""
-        lat = self.generate_latents(n_samples, num_inference_steps)
-        imgs = self.decode_latents(lat)
-        return imgs
