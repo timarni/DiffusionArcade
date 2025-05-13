@@ -235,8 +235,8 @@ class LatentDiffusionModel:
         self.scale = self.vae.config.scaling_factor
         
         # latent shape
-        latent_channels = self.vae.config.latent_channels
-        latent_size = int(math.sqrt(self.vae.config.sample_size))
+        self.latent_channels = self.vae.config.latent_channels
+        self.latent_size = int(math.sqrt(self.vae.config.sample_size))
 
         # UNet in latent space
         self.model = UNet2DModel(
@@ -348,14 +348,11 @@ class LatentDiffusionModel:
         """Generate latent samples from noise"""
         
         self.scheduler.set_timesteps(num_inference_steps)
-        
+
         # start from Gaussian noise in latent space
-        latents = torch.randn(
-            n_samples,
-            self.vae.config.latent_channels,
-            self.vae.config.sample_size,
-            self.vae.config.sample_size,
-        ).to(self.device)
+        latent_channels = self.vae.config.latent_channels
+        latent_size = int(math.sqrt(self.vae.config.sample_size))
+        latents = torch.randn(n_samples, latent_channels, latent_size, latent_size).to(self.device)
 
         for t in self.scheduler.timesteps:
             with torch.no_grad():
@@ -364,14 +361,16 @@ class LatentDiffusionModel:
 
         return latents
 
+
     def decode_latents(self, latents: torch.Tensor) -> torch.Tensor:
-        """Decode latent vectors to image tensor"""
-        lat_scaled = latents / self.scale
+        """Decode latent vectors to images"""
+        latents_scaled = latents / self.scale
+
         with torch.no_grad():
-            imgs = self.vae.decode(lat_scaled).sample
-        # imgs in [-1,1], convert to [0,1]
-        imgs = (imgs.clamp(-1,1) + 1) / 2
-        return imgs.cpu()
+            decoded_imgs = self.vae.decode(latents_scaled).sample
+
+        return decoded_imgs.cpu()
+
 
     def generate_images(
         self,
