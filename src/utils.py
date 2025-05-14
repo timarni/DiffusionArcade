@@ -1,7 +1,27 @@
+import os
 import numpy as np
 import torchvision
+import yaml
 
 from PIL import Image
+from huggingface_hub import login
+from dotenv import load_dotenv
+
+def login_huggingface():
+    load_dotenv()
+
+    token = os.environ.get("HF_ACCESS_TOKEN")
+
+    if token is None:
+        raise ValueError("HF_ACCESS_TOKEN environment variable not set. Please add it to your .env file.")
+    login(token=token)
+
+
+def load_config(config_path: str = "config.yaml"):
+    """Load configuration from yaml file"""
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+    return config
 
 
 def show_images(x):

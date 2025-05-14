@@ -1,30 +1,9 @@
-import os
 import torch
 import torch.nn.functional as F
 import wandb
-import yaml
 
 from diffusers import UNet2DModel, DDIMScheduler, DDPMScheduler
-from huggingface_hub import login
-from dotenv import load_dotenv
 from tqdm import tqdm
-
-
-def login_huggingface():
-    load_dotenv()
-
-    token = os.environ.get("HF_ACCESS_TOKEN")
-
-    if token is None:
-        raise ValueError("HF_ACCESS_TOKEN environment variable not set. Please add it to your .env file.")
-    login(token=token)
-
-
-def load_config(config_path: str = "config.yaml"):
-    """Load configuration from yaml file"""
-    with open(config_path, 'r') as f:
-        config = yaml.safe_load(f)
-    return config
 
 
 class DiffusionModel:
@@ -56,6 +35,7 @@ class DiffusionModel:
             "UpBlock2D",
             "UpBlock2D",
         ),
+        scheduler: str = 'DDPM',
     ):
         """
         Initialize the UNet model and DDIM scheduler.
@@ -72,10 +52,17 @@ class DiffusionModel:
             up_block_types=up_block_types,
         ).to(self.device)
 
-        self.scheduler = DDPMScheduler(
-            num_train_timesteps=timesteps,
-            beta_schedule=beta_schedule
-        )
+        if scheduler == 'DDPM':
+            self.scheduler = DDPMScheduler(
+                num_train_timesteps=timesteps,
+                beta_schedule=beta_schedule
+            )
+        else:
+            self.scheduler = DDIMScheduler(
+                num_train_timesteps=timesteps,
+                beta_schedule=beta_schedule
+            )
+            
 
     def train(
         self,
