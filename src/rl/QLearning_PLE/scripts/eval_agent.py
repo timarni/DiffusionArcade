@@ -14,8 +14,8 @@ python3 eval_agent.py --agent agents/q_table_of_500_eps.pkl --games 20 --display
 import argparse
 import pickle
 
-from ple import PLE
-from pong import Pong
+from ple.ple import PLE
+from ple.games.pong import Pong
 # from ple.games.pong import Pong
 
 # --- must match training hyper‑params ---------------------------------------
@@ -70,6 +70,7 @@ def main() -> None:
 
     # 3. Pure‑exploitation evaluation loop -----------------------------------
     wins = 0
+    agent_points = []
     for ep in range(args.games):
         env.reset_game()
         state = discretise(env.getGameState())
@@ -82,6 +83,7 @@ def main() -> None:
             state = discretise(env.getGameState())
 
         print(f"game scores:  {game.score_counts['agent']} : {game.score_counts['cpu']}")
+        agent_points.append(game.score_counts["agent"])
         if game.score_counts["agent"] > game.score_counts["cpu"]:
             # print(f"game scores:  {game.score_counts['agent']} : {game.score_counts['cpu']}")
             wins += 1
@@ -90,6 +92,9 @@ def main() -> None:
     print(f"\nEvaluated {args.games} episodes")
     print(f"Agent wins : {wins}")
     print(f"Win‑rate   : {wins/args.games:.2%}")
+    n = len(agent_points)
+    avg_agent_points = sum(agent_points) / float(n)
+    print(f"Avg points by agent: {avg_agent_points}")
 
 
 if __name__ == "__main__":

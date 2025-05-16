@@ -19,24 +19,28 @@ import numpy as np
 import matplotlib.pyplot as plt 
 from tqdm import tqdm
 import argparse
+import cv2
 from collections import defaultdict
 from datetime import datetime
+from pathlib import Path
 
 import pygame
-from ple import PLE
+from ple.ple import PLE
 # from ple.games.pong import Pong
-from pong import Pong
+from ple.games.pong import Pong
+
+FILE_PATH = Path(__file__).resolve()
 
 ### Hyper-parameters for Q-learning
-EPISODES = 2000 # nbr of games
-MAX_STEPS = 30_000 # max_setps per episode as a safety break
+EPISODES = 5000 # nbr of games
+MAX_STEPS = 30_000 # max_steps per episode as a safety break
 ALPHA = 1e-01 # learning‑rate
 GAMMA = 0.95 # discount
 EPSILON_START = 1.0  # ε‑greedy exploration schedule (with proba ε take a random action and with proba 1-ε action with the highest Q-value)
 EPSILON_END = 0.1
 EPSILON_DECAY_LEN = int(0.9*EPISODES)  # linearly decay over whole run
 STATE_BINS = (6, 6, 4, 6, 3, 3, 6)  #(12, 12, 8, 12, 3, 3, 12) # discretisation for y, y‑vel, x, y, vx, vy, y
-REWARD_POLICY = 'enhanced_2'
+REWARD_POLICY = 'human'
 
 ### Evaluations for debugging
 EVAL_AGENT_SCORE = True
@@ -110,8 +114,8 @@ def plot_agent_return(episode_returns, run_stamp):
     plt.title("Learning curve – Pong Q‑learning")
     plt.legend()
     plt.tight_layout()
-    plt.savefig(f"logs/return_curve_{run_stamp}.png")
-    print(f"Plot return per episode saved to: logs/return_curve_{run_stamp}.png")
+    plt.savefig(f"{FILE_PATH.parent.parent}/logs/return_curve_{run_stamp}.png")
+    print(f"Plot return per episode saved to: {FILE_PATH.parent.parent}/logs/return_curve_{run_stamp}.png")
 
 
 def plot_scores_per_episode(scores_agent, scores_cpu, run_stamp):
@@ -129,9 +133,9 @@ def plot_scores_per_episode(scores_agent, scores_cpu, run_stamp):
     plt.ylabel('Points')
     plt.title('Agent vs CPU Points Over Time')
     plt.legend()
-    plt.savefig(f"logs/score_curve_{run_stamp}.png")
+    plt.savefig(f"{FILE_PATH.parent.parent}/logs/score_curve_{run_stamp}.png")
     plt.grid(True)
-    print(f"Plot return per episode saved to: logs/score_curve_{run_stamp}.png")
+    print(f"Plot return per episode saved to: {FILE_PATH.parent.parent}/logs/score_curve_{run_stamp}.png")
 
 
 def linear_decay_alpha(ep, total_episodes=1000, start=0.1, end=1e-06):
@@ -161,9 +165,11 @@ def train_agent(fps=30, display_screen=False, recording=True):
 
     run_stamp = datetime.now().strftime("%Y‑%m‑%d_%H‑%M‑%S")
 
+    penalty_sum = '?'
+
     if recording:
-        os.makedirs("logs", exist_ok=True)
-        csv_path = f"logs/pong_states_{run_stamp}.csv"
+        os.makedirs(f"{FILE_PATH.parent.parent}/logs", exist_ok=True)
+        csv_path = f"{FILE_PATH.parent.parent}/logs/pong_states_{run_stamp}.csv"
 
         f_csv = open(csv_path, "w", newline="")
         csv_writer = csv.writer(f_csv)
@@ -176,12 +182,17 @@ def train_agent(fps=30, display_screen=False, recording=True):
             "reward", "action"
         ]
         csv_writer.writerow(header)
-        ret_path = f"logs/pong_returns_{run_stamp}.csv"
+        ret_path = f"{FILE_PATH.parent.parent}/logs/pong_returns_{run_stamp}.csv"
         ret_csv = csv.writer(open(ret_path, "w", newline=""))
         ret_csv.writerow(["episode", "return"])
 
+        os.makedirs(f"{FILE_PATH.parent.parent}/screens/", exist_ok=True)
+        screen_csv = open(f"{FILE_PATH.parent.parent}/screens/{run_stamp}.csv", "w", newline="")
+        screen_writer = csv.writer(screen_csv)
+
     # main loop
     total_steps = 0
+    nbr_of_screens = 0
     episode_returns = [] # used to plot learning curve
     agent_score_per_ep = [] # used to plot scores
     cpu_score_per_ep = [] # used to plot scores
@@ -211,6 +222,9 @@ def train_agent(fps=30, display_screen=False, recording=True):
             next_state = discretise(next_state_raw) # discretise to be able to store in Q-table
             done = env.game_over() # check if episode is over (i.e. someone won)
 
+            penalty_sum = next_state_raw['total_penalty']
+            # print(f"reward: {next_state_raw['total_reward']}, penalty: {next_state_raw['total_penalty']}")
+
             if EVAL_AGENT_SCORE:
                 agent_score_new = game.score_counts["agent"]
                 if agent_score_new != agent_score_prev:
@@ -231,7 +245,7 @@ def train_agent(fps=30, display_screen=False, recording=True):
             )
             state = next_state
 
-            if recording and step % 2 == 0:
+            if recording and step % 20 == 0 and ep > 4500:
                 # write frame/game state information to csv
                 csv_writer.writerow([
                     ep, step,
@@ -245,6 +259,16 @@ def train_agent(fps=30, display_screen=False, recording=True):
                     reward,
                     ACTION_IDX[action],
                 ])
+
+                # Save frame
+                frame_rgb = env.getScreenRGB()  # (H, W, 3) uint8, RGB order
+                # convert to BGR because OpenCV expects that
+                frame_bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
+                # build filename: e.g. ep0007_step01234_r+1.jpg
+                fname = f"{FILE_PATH.parent.parent}/screens/ep{ep:04d}_step{step:05d}.jpg"
+                cv2.imwrite(fname, frame_bgr)  # finally write JPEG
+                nbr_of_screens += 1
+                screen_writer.writerow([f"{ep}_{step}", ACTION_IDX[action]])
 
             step += 1
             total_steps += 1
@@ -263,16 +287,17 @@ def train_agent(fps=30, display_screen=False, recording=True):
 
         print(f"\nFinished. Every state was appended to {csv_path}")
 
-    os.makedirs("agents", exist_ok=True)
-    agent_path = f"agents/q_table_{run_stamp}.pkl"
+    os.makedirs(f"{FILE_PATH.parent.parent}/agents", exist_ok=True)
+    agent_path = f"{FILE_PATH.parent.parent}/agents/q_table_{run_stamp}.pkl"
     with open(agent_path, "wb") as f:
         pickle.dump(dict(Q), f)
 
     print(f"The agent policy was stored in {agent_path}")
+    print(f"{nbr_of_screens} frames were saved")
 
     pygame.quit()
 
-    return episode_returns, agent_score_per_ep, cpu_score_per_ep, run_stamp, Q
+    return episode_returns, agent_score_per_ep, cpu_score_per_ep, run_stamp, Q, penalty_sum
 
 
 def evaluate_agent(Q, games=100, fps=30, display=False):
@@ -287,6 +312,7 @@ def evaluate_agent(Q, games=100, fps=30, display=False):
 
     # 2. Pure‑exploitation evaluation loop
     wins = 0
+    agent_points = []
     for ep in tqdm(range(games)):
         env.reset_game()
         state = discretise(env.getGameState())
@@ -299,14 +325,18 @@ def evaluate_agent(Q, games=100, fps=30, display=False):
             state = discretise(env.getGameState())
 
         print(f"game scores:  {game.score_counts['agent']} : {game.score_counts['cpu']}")
+        agent_points.append(game.score_counts["agent"])
         if game.score_counts["agent"] > game.score_counts["cpu"]:
             # print(f"game scores:  {game.score_counts['agent']} : {game.score_counts['cpu']}")
             wins += 1
 
     # 2. Report
+    n = len(agent_points)
+    avg_agent_points = sum(agent_points)/float(n)
     print(f"\nEvaluated {games} episodes")
     print(f"Agent wins : {wins}")
     print(f"Win‑rate   : {wins/games:.2%}")
+    print(f"Avg points by agent: {avg_agent_points}")
 
     pygame.quit()
 
@@ -321,12 +351,16 @@ def main():
     parser.add_argument("--eval_vis", action="store_true", help="Enable evaluation visualization (default: disabled)")
     args = parser.parse_args()
 
+    # assert False, f"{FILE_PATH.parent.parent}"
+
     # TRAINING
-    episode_returns, agent_score_per_ep, cpu_score_per_ep, run_stamp, Q = train_agent(
+    episode_returns, agent_score_per_ep, cpu_score_per_ep, run_stamp, Q, penalty_sum = train_agent(
         fps=args.fps,
         display_screen=args.display,
         recording=not args.no_recording
     )
+
+    print(f"Penalty sum: {penalty_sum:.4f}")
 
     # Plot learning curves
     if not args.no_plot:
