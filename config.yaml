@@ -1,10 +1,11 @@
 default_config: &default_config
-  epochs: 30
+  epochs: 10
   learning_rate: 0.0004
   batch_size: 32
   image_size: 128
   timesteps: 1000
   beta_schedule: "squaredcos_cap_v2"
+  scheduler: "DDPM"
   num_inference_steps: 1000
 
 training_images:
@@ -31,6 +32,6 @@ model:
     - "UpBlock2D"
 
 wandb:
-  project: "diffusion-arcade"
+  project: "diffusion-arcade-final"
   entity: "<YOUR WANDB USERNAME>"
   run_name: "diffusion-model"

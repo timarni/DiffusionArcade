@@ -93,7 +93,7 @@ class DiffusionModel:
                 noise = torch.randn_like(clean_images)
                 timesteps = torch.randint(
                     0,
-                    self.scheduler.num_train_timesteps,
+                    self.scheduler.config.num_train_timesteps,
                     (clean_images.size(0),),
                     device=self.device
                 ).long()
@@ -101,6 +101,8 @@ class DiffusionModel:
                 noisy_images = self.scheduler.add_noise(clean_images, noise, timesteps)
                 noise_pred = self.model(noisy_images, timesteps).sample
                 loss = F.mse_loss(noise_pred, noise)
+
+                # TODO: weight loss
 
                 loss.backward()
                 optimizer.step()
@@ -129,7 +131,7 @@ class DiffusionModel:
                         noise = torch.randn_like(clean_images)
                         timesteps = torch.randint(
                             0,
-                            self.scheduler.num_train_timesteps,
+                            self.scheduler.config.num_train_timesteps,
                             (clean_images.size(0),),
                             device=self.device
                         ).long()
@@ -210,6 +212,7 @@ class LatentDiffusionModel:
             "UpBlock2D",
             "UpBlock2D",
         ),
+        scheduler: str = "DDPM",
     ):
         """
         Initialize the UNet model and DDPM scheduler for latent diffusion.
@@ -231,10 +234,16 @@ class LatentDiffusionModel:
         ).to(self.device)
 
         # scheduler
-        self.scheduler = DDPMScheduler(
-            num_train_timesteps=timesteps,
-            beta_schedule=beta_schedule
-        )
+        if scheduler == "DDPM":
+            self.scheduler = DDPMScheduler(
+                num_train_timesteps=timesteps,
+                beta_schedule=beta_schedule
+            )
+        else:
+            self.scheduler = DDIMScheduler(
+                num_train_timesteps=timesteps,
+                beta_schedule=beta_schedule
+            )
     
     def train(
         self,
@@ -264,7 +273,7 @@ class LatentDiffusionModel:
                 noise = torch.randn_like(latents)
                 timesteps = torch.randint(
                     0,
-                    self.scheduler.num_train_timesteps,
+                    self.scheduler.config.num_train_timesteps,
                     (latents.size(0),),
                     device=self.device
                 ).long()
@@ -300,7 +309,7 @@ class LatentDiffusionModel:
                         noise = torch.randn_like(latents)
                         timesteps = torch.randint(
                             0,
-                            self.scheduler.num_train_timesteps,
+                            self.scheduler.config.num_train_timesteps,
                             (latents.size(0),),
                             device=self.device
                         ).long()
