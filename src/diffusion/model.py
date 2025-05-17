@@ -35,7 +35,7 @@ class DiffusionModel:
             "UpBlock2D",
             "UpBlock2D",
         ),
-        scheduler: str = 'DDPM',
+        noise_scheduler: str = 'DDPM',
     ):
         """
         Initialize the UNet model and DDIM scheduler.
@@ -52,16 +52,25 @@ class DiffusionModel:
             up_block_types=up_block_types,
         ).to(self.device)
 
-        if scheduler == 'DDPM':
-            self.scheduler = DDPMScheduler(
+        if noise_scheduler == 'DDPM':
+            self.noise_scheduler = DDPMScheduler(
                 num_train_timesteps=timesteps,
                 beta_schedule=beta_schedule
             )
         else:
-            self.scheduler = DDIMScheduler(
+            self.noise_scheduler = DDIMScheduler(
                 num_train_timesteps=timesteps,
                 beta_schedule=beta_schedule
             )
+
+
+    def compute_noise_weights(self, timesteps, gamma=5.0):
+        alpha_bar = self.noise_scheduler.alphas_cumprod.to(timesteps.device)
+        snr = alpha_bar / (1 - alpha_bar)
+        snr_t = snr.gather(-1, timesteps)
+        weights = (snr_t + 1) / (snr_t + gamma)
+        
+        return weights
             
 
     def train(
@@ -74,6 +83,20 @@ class DiffusionModel:
     ):
         """Train the diffusion model over the provided dataloader"""
         optimizer = torch.optim.AdamW(self.model.parameters(), lr=lr)
+
+        steps_per_epoch = len(train_dataloader)
+
+        scheduler = torch.optim.lr_scheduler.OneCycleLR(
+            optimizer,
+            max_lr=lr,
+            epochs=epochs,
+            steps_per_epoch=steps_per_epoch,
+            pct_start=0.05,
+            div_factor=25.0,
+            final_div_factor=150.0,
+            anneal_strategy="cos",
+        )
+        
         train_losses = []
         val_losses = []
         best_val_loss = float('inf')
@@ -90,22 +113,27 @@ class DiffusionModel:
             loop = tqdm(train_dataloader, desc=f"Epoch {epoch+1}/{epochs}")
             for batch in loop:
                 clean_images = batch["image"].to(self.device)
+
                 noise = torch.randn_like(clean_images)
+
                 timesteps = torch.randint(
                     0,
-                    self.scheduler.config.num_train_timesteps,
+                    self.noise_scheduler.config.num_train_timesteps,
                     (clean_images.size(0),),
                     device=self.device
                 ).long()
+                weights = self.compute_noise_weights(timesteps)
 
-                noisy_images = self.scheduler.add_noise(clean_images, noise, timesteps)
+                noisy_images = self.noise_scheduler.add_noise(clean_images, noise, timesteps)
                 noise_pred = self.model(noisy_images, timesteps).sample
-                loss = F.mse_loss(noise_pred, noise)
 
-                # TODO: weight loss
+                 # Weight loss to allow the model to learn from images without much noise
+                squared_diff = (noise_pred - noise)**2
+                loss = (squared_diff * weights.view(-1, 1, 1, 1)).mean()
 
                 loss.backward()
                 optimizer.step()
+                scheduler.step() 
                 optimizer.zero_grad()
 
                 epoch_train_losses.append(loss.item())
@@ -128,17 +156,22 @@ class DiffusionModel:
                 with torch.no_grad():
                     for batch in val_dataloader:
                         clean_images = batch["image"].to(self.device)
+
                         noise = torch.randn_like(clean_images)
+
                         timesteps = torch.randint(
                             0,
-                            self.scheduler.config.num_train_timesteps,
+                            self.noise_scheduler.config.num_train_timesteps,
                             (clean_images.size(0),),
                             device=self.device
                         ).long()
+                        weights = self.compute_noise_weights(timesteps)
 
-                        noisy_images = self.scheduler.add_noise(clean_images, noise, timesteps)
+                        noisy_images = self.noise_scheduler.add_noise(clean_images, noise, timesteps)
                         noise_pred = self.model(noisy_images, timesteps).sample
-                        loss = F.mse_loss(noise_pred, noise)
+
+                        squared_diff = (noise_pred - noise) ** 2
+                        loss = (squared_diff * weights.view(-1, 1, 1, 1)).mean()
                         epoch_val_losses.append(loss.item())
 
                         global_step += 1
@@ -158,7 +191,8 @@ class DiffusionModel:
             print(
                 f"Epoch [{epoch+1}/{epochs}] "
                 f"Train Loss: {avg_train_loss:.4f} "
-                f"Val Loss: {val_str}"
+                f"Val Loss: {val_str} "
+                f"LR: {scheduler.get_last_lr()[0]:.2e}"
             )
 
         return train_losses, val_losses
@@ -171,15 +205,15 @@ class DiffusionModel:
     ):
         """Generate images from noise"""
         # Set timesteps for inference
-        self.scheduler.set_timesteps(num_inference_steps)
+        self.noise_scheduler.set_timesteps(num_inference_steps)
 
         # Start from pure noise
         sample = torch.randn(n_images, n_channels, self.model.sample_size, self.model.sample_size).to(self.device)
 
-        for t in self.scheduler.timesteps:
+        for t in self.noise_scheduler.timesteps:
             with torch.no_grad():
-                residual = self.model(sample, t).sample
-            sample = self.scheduler.step(residual, t, sample).prev_sample
+                predicted_noise = self.model(sample, t).sample
+            sample = self.noise_scheduler.step(predicted_noise, t, sample).prev_sample
 
         return sample
 
@@ -212,7 +246,7 @@ class LatentDiffusionModel:
             "UpBlock2D",
             "UpBlock2D",
         ),
-        scheduler: str = "DDPM",
+        noise_scheduler: str = "DDPM",
     ):
         """
         Initialize the UNet model and DDPM scheduler for latent diffusion.
@@ -234,13 +268,13 @@ class LatentDiffusionModel:
         ).to(self.device)
 
         # scheduler
-        if scheduler == "DDPM":
-            self.scheduler = DDPMScheduler(
+        if noise_scheduler == "DDPM":
+            self.noise_scheduler = DDPMScheduler(
                 num_train_timesteps=timesteps,
                 beta_schedule=beta_schedule
             )
         else:
-            self.scheduler = DDIMScheduler(
+            self.noise_scheduler = DDIMScheduler(
                 num_train_timesteps=timesteps,
                 beta_schedule=beta_schedule
             )
@@ -255,6 +289,20 @@ class LatentDiffusionModel:
     ):
         """Train the diffusion model on latent representations"""
         optimizer = torch.optim.AdamW(self.model.parameters(), lr=lr)
+
+        steps_per_epoch = len(train_dataloader)
+
+        scheduler = torch.optim.lr_scheduler.OneCycleLR(
+            optimizer,
+            max_lr=lr,
+            epochs=epochs,
+            steps_per_epoch=steps_per_epoch,
+            pct_start=0.05,
+            div_factor=25.0,
+            final_div_factor=150.0,
+            anneal_strategy="cos",
+        )
+        
         train_losses, val_losses = [], []
         best_val_loss = float('inf')
         global_step = 0
@@ -273,17 +321,18 @@ class LatentDiffusionModel:
                 noise = torch.randn_like(latents)
                 timesteps = torch.randint(
                     0,
-                    self.scheduler.config.num_train_timesteps,
+                    self.noise_scheduler.config.num_train_timesteps,
                     (latents.size(0),),
                     device=self.device
                 ).long()
 
-                noisy_latents = self.scheduler.add_noise(latents, noise, timesteps)
+                noisy_latents = self.noise_scheduler.add_noise(latents, noise, timesteps)
                 noise_pred = self.model(noisy_latents, timesteps).sample
                 loss = F.mse_loss(noise_pred, noise)
 
                 loss.backward()
                 optimizer.step()
+                scheduler.step()
                 optimizer.zero_grad()
 
                 epoch_train_losses.append(loss.item())
@@ -309,12 +358,12 @@ class LatentDiffusionModel:
                         noise = torch.randn_like(latents)
                         timesteps = torch.randint(
                             0,
-                            self.scheduler.config.num_train_timesteps,
+                            self.noise_scheduler.config.num_train_timesteps,
                             (latents.size(0),),
                             device=self.device
                         ).long()
 
-                        noisy_latents = self.scheduler.add_noise(latents, noise, timesteps)
+                        noisy_latents = self.noise_scheduler.add_noise(latents, noise, timesteps)
                         noise_pred = self.model(noisy_latents, timesteps).sample
                         val_losses_epoch.append(F.mse_loss(noise_pred, noise).item())
 
@@ -330,7 +379,7 @@ class LatentDiffusionModel:
                     log_data["epoch/val_loss"] = avg_val_loss
                 wandb.log(log_data, step=global_step)
 
-            print(f"Epoch [{epoch+1}/{epochs}] Train Loss: {train_losses[-1]:.4f} Val Loss: {avg_val_loss if avg_val_loss else 'N/A'}")
+            print(f"Epoch [{epoch+1}/{epochs}] Train Loss: {train_losses[-1]:.4f} Val Loss: {avg_val_loss if avg_val_loss else 'N/A'} LR: {scheduler.get_last_lr()[0]:.2e}")
 
         return train_losses, val_losses
 
@@ -342,14 +391,14 @@ class LatentDiffusionModel:
     ) -> torch.Tensor:
         """Generate latent samples from noise"""
         
-        self.scheduler.set_timesteps(num_inference_steps)
+        self.noise_scheduler.set_timesteps(num_inference_steps)
 
         # start from Gaussian noise in latent space
         latents = torch.randn(n_samples, self.latent_channels, self.latent_size, self.latent_size).to(self.device)
 
-        for t in self.scheduler.timesteps:
+        for t in self.noise_scheduler.timesteps:
             with torch.no_grad():
                 noise_pred = self.model(latents, t).sample
-            latents = self.scheduler.step(noise_pred, t, latents).prev_sample
+            latents = self.noise_scheduler.step(noise_pred, t, latents).prev_sample
 
         return latents
