@@ -2,9 +2,10 @@ import random
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import numpy as np
 
-# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-device = torch.device("cuda")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# device = torch.device("cuda")
 
 
 class ReplayMemory:
@@ -16,20 +17,37 @@ class ReplayMemory:
     def __len__(self):
         return len(self.memory)
 
-    def push(self, obs, action, next_obs, reward):
+    @torch.no_grad()
+    def push(self, obs, action, next_obs, reward, done):
         if len(self.memory) < self.capacity:
-            self.memory.append(None)
+             self.memory.append(None)
 
-        self.memory[self.position] = (obs, action, next_obs, reward)
+        self.memory[self.position] = (
+            (obs      * 255).round().to('cpu', dtype=torch.uint8),
+            action.to('cpu', dtype=torch.int8),
+            (next_obs * 255).round().to('cpu', dtype=torch.uint8),
+            reward.to('cpu'),
+            done,
+        )
         self.position = (self.position + 1) % self.capacity
 
     def sample(self, batch_size):
-        """
-        Samples batch_size transitions from the replay memory and returns a tuple
-            (obs, action, next_obs, reward)
-        """
-        sample = random.sample(self.memory, batch_size)
-        return tuple(zip(*sample))
+        sample = random.sample(self.memory[:len(self)], batch_size)
+        obs, act, nxt, rew, done = map(list, zip(*sample))
+
+        obs = torch.stack(obs, 0).float().div_(255).to(device, non_blocking=True)
+        nxt = torch.stack(nxt, 0).float().div_(255).to(device, non_blocking=True)
+        act = torch.stack(act, 0).long().to(device, non_blocking=True)
+        rew = torch.stack(rew, 0).squeeze(1).to(device, non_blocking=True)
+        done = torch.tensor(done, dtype=torch.bool, device=device)
+        return obs, act, nxt, rew, done
+
+
+def print_frame_stats(t, name="tensor"):
+    # t shape: [B, 4, H, W]  (after unsqueeze)
+    print(f"{name}: shape {tuple(t.shape)}, "
+        f"min {t.min():.3f}, max {t.max():.3f}, "
+        f"mean {t.mean():.5f}, non-zeros {(t>0).float().mean()*100:.3f}%")
 
 
 class DQN(nn.Module):
@@ -43,36 +61,45 @@ class DQN(nn.Module):
         self.eps_end = env_config["eps_end"]
         self.anneal_length = env_config["anneal_length"]
         self.n_actions = env_config["n_actions"]
+        self.H = env_config["input_height"]
+        self.W = env_config["input_width"]
 
         self.current_eps = self.eps_start
 
-        self.fc1 = nn.Linear(4, 256)
-        self.fc2 = nn.Linear(256, self.n_actions)
-
         self.relu = nn.ReLU()
-        self.flatten = nn.Flatten()
+        self.flatten = nn.Flatten(start_dim=1) # Changed?
 
         self.env = env_config["env_name"]
         self.conv1 = nn.Conv2d(4, 32, kernel_size=8, stride=4, padding=0)
         self.conv2 = nn.Conv2d(32, 64, kernel_size=4, stride=2, padding=0)
         self.conv3 = nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=0)
-        self.fc1conv = nn.Linear(3136, 512)
-        self.fc2conv = nn.Linear(512, self.n_actions)
+
+        conv_out_dim = self._get_conv_out_dim()
+
+        self.fc1 = nn.Linear(conv_out_dim, 512)
+        self.fc2 = nn.Linear(512, self.n_actions)
+    
+    def _get_conv_out_dim(self):
+        """
+        Runs a dummy batch through conv layers to determine the
+        flattened feature size, so nothing is hard-coded.
+        """
+        with torch.no_grad():
+            dummy = torch.zeros(1, 4, self.H, self.W) # [B=1, C=4, H, W]
+            x = self.relu(self.conv1(dummy))
+            x = self.relu(self.conv2(x))
+            x = self.relu(self.conv3(x))
+            return int(np.prod(x.shape[1:])) # C × H × W
+
 
     def forward(self, x):
         """Runs the forward pass of the NN depending on architecture."""
-        if self.env == "cartpole":
-            x = self.relu(self.fc1(x))
-            x = self.fc2(x)
-        elif self.env == "pong":
-            x = self.relu(self.conv1(x))
-            x = self.relu(self.conv2(x))
-            x = self.relu(self.conv3(x))
-            x = self.flatten(x)
-            x = self.relu(self.fc1conv(x))
-            x = self.fc2conv(x)
-        else:
-            raise ValueError("Unknown environment: {}".format(self.env))
+        x = self.relu(self.conv1(x))
+        x = self.relu(self.conv2(x))
+        x = self.relu(self.conv3(x))
+        x = self.flatten(x)
+        x = self.relu(self.fc1(x))
+        x = self.fc2(x)
 
         return x
 
@@ -99,87 +126,141 @@ def optimize(dqn, target_dqn, memory, optimizer):
     if len(memory) < dqn.batch_size:
         return
 
-    # 2) Sample and batch‑stack tensors  --------------------------------------
-    obss, actions, next_obss, rewards = memory.sample(dqn.batch_size)
+    # 2) Sample and batch‑stack tensors
+    obss, actions, next_obss, rewards, dones = memory.sample(dqn.batch_size)
 
-    obss      = torch.stack(obss).to(device)            # [B, 4, 84, 84]
-    actions   = torch.stack(actions).long().to(device)  # [B, 1]  (indices)
-    next_obss = torch.stack(next_obss).to(device)       # [B, 4, 84, 84]
-    rewards   = torch.stack(rewards).to(device).squeeze(1)  # [B]
+    # --- QUICK HEALTH-CHECK: are Q-values still ~0 ? -------------------------
+    if not hasattr(optimize, "tick"):      # static counter on the function
+        optimize.tick = 0
+    optimize.tick += 1
+    if optimize.tick % 400 == 0:           # print every 400 SGD updates
+        with torch.no_grad():
+            qs = dqn(obss).detach().cpu()
+        print(
+            f"[Q-stats] mean|Q|={qs.abs().mean():.3f} "
+            f"max|Q|={qs.abs().max():.3f}"
+        )
+    # -------------------------------------------------------------------------
 
-    # 3) Current Q‑values Q(s,a)  --------------------------------------------
-    q_pred   = dqn(obss)                                # [B, n_actions]
-    q_values = q_pred.gather(1, actions).squeeze(1)     # [B]
 
-    # 4) Target Q‑values r + γ max_a' Q̂(s',a')  ------------------------------
+    # 3) Current Q‑values Q(s,a)
+    q_pred = dqn(obss) # [B, n_actions]
+    q_values = q_pred.gather(1, actions).squeeze(1) # [B]
+
     with torch.no_grad():
-        next_q = target_dqn(next_obss).max(1)[0]        # [B]
-    q_targets = rewards + dqn.gamma * next_q            # [B]
+        # Step 1: action selection using online network
+        next_actions = dqn(next_obss).argmax(1) # [B]
+        # Step 2: action evaluation using target network
+        next_q = target_dqn(next_obss).gather(1, next_actions.unsqueeze(1)).squeeze(1)  # [B]
+    q_targets = rewards + dqn.gamma * next_q
+    q_targets[dones] = rewards[dones]
 
-    # 5) Epsilon annealing ----------------------------------------------------
-    dqn.current_eps = max(
-        dqn.eps_end,
-        dqn.current_eps - (dqn.eps_start - dqn.eps_end) / dqn.anneal_length
-    )
 
-    # 6) Loss, back‑prop, optimizer step  ------------------------------------
-    loss = F.mse_loss(q_values, q_targets)
+    # 5) Epsilon annealing -> now moved to main loop
+
+    # 6) Loss, back‑prop, optimizer step
+    loss = F.smooth_l1_loss(q_values, q_targets)
 
     optimizer.zero_grad()
     loss.backward()
+
+    # --- GRADIENT CHECK ----------------------
+    grad_norm = torch.nn.utils.clip_grad_norm_(dqn.parameters(), 1)
+    if optimize.tick % 400 == 0:
+        print(f"[grad] ‖g‖₂ before clip = {grad_norm:6.4f}")
+    # -----------------------------------------
+
     optimizer.step()
 
     return loss.item()
 
 
-# Original but slow optimizer function
+# ## Old version, where everything was on GPU (bad!! -> needed 58GB of GPU VRAM)
+
+# class ReplayMemory:
+#     def __init__(self, capacity):
+#         self.capacity = capacity
+#         self.memory = []
+#         self.position = 0
+
+#     def __len__(self):
+#         return len(self.memory)
+
+#     def push(self, obs, action, next_obs, reward, done):
+#         if len(self.memory) < self.capacity:
+#             self.memory.append(None)
+
+#         self.memory[self.position] = (obs, action, next_obs, reward, done)
+#         self.position = (self.position + 1) % self.capacity
+
+#     def sample(self, batch_size):
+#         """
+#         Samples batch_size transitions from the replay memory and returns a tuple
+#             (obs, action, next_obs, reward)
+#         """
+#         sample = random.sample(self.memory, batch_size)
+#         return tuple(zip(*sample))
+
+
+# ## Old version that worked but used too much GPU VRAM
 
 # def optimize(dqn, target_dqn, memory, optimizer):
-#     """This function samples a batch from the replay buffer and optimizes the Q-network."""
-#     # If we don't have enough transitions stored yet, we don't train.
+#     """Sample a batch from replay memory and update the online network (batched, fast)."""
+#     # 1) Skip update if we have too little data
 #     if len(memory) < dqn.batch_size:
 #         return
 
-#     # Sample a batch from the replay memory and concatenate so that there are
-#     # four tensors in total: observations, actions, next observations and rewards.
-#     obss, actions, next_obss, rewards = memory.sample(dqn.batch_size)
+#     # 2) Sample and batch‑stack tensors
+#     obss, actions, next_obss, rewards, dones = memory.sample(dqn.batch_size)
 
-#     # Stack tensors
-#     obss = torch.stack(obss).to(device)
-#     actions = torch.stack(actions).to(device)
-#     next_obss = torch.stack(next_obss).to(device)
-#     rewards = torch.stack(rewards).to(device)
+#     obss = torch.stack(obss).to(device) # [B, 4, 84, 84]
+#     actions = torch.stack(actions).long().to(device) # [B, 1]  (indices)
+#     next_obss = torch.stack(next_obss).to(device) # [B, 4, 84, 84]
+#     rewards = torch.stack(rewards).to(device).squeeze(1) # [B]
+#     dones = torch.tensor(dones, dtype=torch.bool).to(device)  # [B]
+#     # print_frame_stats(obss, "obss")
 
-#     # Compute the current estimates of the Q-values for each state-action pair (s,a).
-#     q_values = torch.zeros(dqn.batch_size, device=device)
-#     for obs, action, i in zip(obss, actions, range(dqn.batch_size)):
-#         q_value = dqn.forward(obs.unsqueeze(0)) # added by me
-#         q_values[i] = q_value[0, action]
+#     # --- QUICK HEALTH-CHECK: are Q-values still ~0 ? -------------------------
+#     if not hasattr(optimize, "tick"):      # static counter on the function
+#         optimize.tick = 0
+#     optimize.tick += 1
+#     if optimize.tick % 400 == 0:           # print every 400 SGD updates
+#         with torch.no_grad():
+#             qs = dqn(obss).detach().cpu()
+#         print(
+#             f"[Q-stats] mean|Q|={qs.abs().mean():.3f} "
+#             f"max|Q|={qs.abs().max():.3f}"
+#         )
+#     # -------------------------------------------------------------------------
 
-#     q_values = q_values.unsqueeze(1)
 
-#     # Compute the Q-value targets. Only do this for non-terminal transitions!
-#     q_value_targets = torch.zeros(dqn.batch_size, device=device)
-#     for next_obs, reward, i in zip(next_obss, rewards, range(dqn.batch_size)):
+#     # 3) Current Q‑values Q(s,a)
+#     q_pred = dqn(obss) # [B, n_actions]
+#     q_values = q_pred.gather(1, actions).squeeze(1) # [B]
 
-#         if torch.count_nonzero(next_obs) != 0:
-#             next_q = target_dqn.forward(next_obs.unsqueeze(0)) # New by me
-#             q_value_targets[i] = reward + dqn.gamma * next_q.max().item() # New by me
-#             # q_value_targets[i] = reward + dqn.gamma * \
-#             #     torch.max(target_dqn.forward(next_obs)).to(device)
-#         else:
-#             q_value_targets[i] = reward
+#     with torch.no_grad():
+#         # Step 1: action selection using online network
+#         next_actions = dqn(next_obss).argmax(1) # [B]
+#         # Step 2: action evaluation using target network
+#         next_q = target_dqn(next_obss).gather(1, next_actions.unsqueeze(1)).squeeze(1)  # [B]
+#     q_targets = rewards + dqn.gamma * next_q
+#     q_targets[dones] = rewards[dones]
 
-#     dqn.current_eps = max([dqn.eps_end, dqn.current_eps -
-#                           (dqn.eps_start - dqn.eps_end) / dqn.anneal_length])
 
-#     # Compute loss.
-#     loss = F.mse_loss(q_values.squeeze(), q_value_targets)
+#     # 5) Epsilon annealing -> now moved to main loop
 
-#     # Perform gradient descent.
+#     # 6) Loss, back‑prop, optimizer step
+#     loss = F.smooth_l1_loss(q_values, q_targets)
+
 #     optimizer.zero_grad()
-
 #     loss.backward()
+
+#     # --- GRADIENT CHECK ----------------------
+#     grad_norm = torch.nn.utils.clip_grad_norm_(dqn.parameters(), 1)
+#     if optimize.tick % 400 == 0:
+#         print(f"[grad] ‖g‖₂ before clip = {grad_norm:6.4f}")
+#     # -----------------------------------------
+
 #     optimizer.step()
 
 #     return loss.item()

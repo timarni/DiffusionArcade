@@ -17,17 +17,23 @@ n_actions: The number of actions can easily be accessed with env.action_space.n,
 
 Pong = {
     'env_name': "pong",
-    'memory_size': 10000,
-    'n_episodes': 500,
+    'memory_size': 500_000,
+    'n_episodes': 300,
     'batch_size': 32,
-    'target_update_frequency': 1000,
+    'target_update_frequency': 10_000,
     'train_frequency': 4,
     'gamma': 0.99,
     'lr': 1e-4,
     'eps_start': 1.0,
-    'eps_end': 0.01,
-    'anneal_length': 125000,
-    'n_actions': 2,
+    'eps_end': 0.05,
+    'anneal_length': 1e6,
+    'n_actions': 3,
     "obss_stack_size": 4,
-    'max_steps': 3000,
+    'max_steps': 400_000,
+    'input_height': 48, # 84
+    'input_width': 64, # 84
+    'save_screen': True,
+    'save_screen_freq': 16,
+    'save_in_episodes': [25, 50, 75, 100, 125, 150, 175, 200, 300, 400, 500],
+    'warm_up': 50_000
 }

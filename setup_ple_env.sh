@@ -33,6 +33,8 @@ pip install tqdm
 pip install opencv-python
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 pip install jsonargparse 
+pip install opencv-python
+pip install matplotlib
 
 # ----------------------------------------------------------------------------- 
 # Clone and install PLE in editable mode
