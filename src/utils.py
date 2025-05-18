@@ -42,10 +42,10 @@ def make_grid(images, size=64):
     return output_im
 
 
-def get_formatted_run_name(run_name: str):
+def get_formatted_run_name(run_name: str, model_type: str = "latent"):
     """Format a wandb run name to include date details"""
     timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    return f"{run_name}-{timestamp}"
+    return f"{model_type}-{run_name}-{timestamp}"
 
 
 def push_model_to_hf(model_path: str, repo_id: str):

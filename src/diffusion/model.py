@@ -4,7 +4,8 @@ import wandb
 
 from diffusers import UNet2DModel, DDIMScheduler, DDPMScheduler
 from tqdm import tqdm
-from src.utils import push_model_to_hf
+from src.utils import push_model_to_hf, show_images
+from src.diffusion.vae import VAE
 from pathlib import Path
 
 
@@ -82,6 +83,7 @@ class DiffusionModel:
         epochs: int = 8,
         lr: float = 4e-4,
         wandb_config: dict = None,
+        show_generations: bool = True,
     ):
         """Train the diffusion model over the provided dataloader"""
         optimizer = torch.optim.AdamW(self.model.parameters(), lr=lr)
@@ -149,6 +151,13 @@ class DiffusionModel:
             avg_train_loss = sum(epoch_train_losses) / len(epoch_train_losses)
             train_losses.append(avg_train_loss)
 
+            
+            if show_generations:
+                # Save samples after each epoch to see the quality of generations
+                sample = self.generate(n_images=4, n_channels=1, num_inference_steps=1000)
+                imgs = show_images(sample)
+                wandb.log({"generated samples": wandb.Image(imgs)}, step=global_step)
+            
             # Validation
             if val_dataloader is not None:
                 self.model.eval()
@@ -197,8 +206,12 @@ class DiffusionModel:
                 f"LR: {scheduler.get_last_lr()[0]:.2e}"
             )
 
+        if wandb_config:
+            wandb.finish()
+
         return train_losses, val_losses
 
+    
     def generate(
         self,
         n_images: int = 8,
@@ -212,15 +225,36 @@ class DiffusionModel:
         # Start from pure noise
         sample = torch.randn(n_images, n_channels, self.model.sample_size, self.model.sample_size).to(self.device)
 
-        for t in self.noise_scheduler.timesteps:
-            with torch.no_grad():
+        self.model.eval()
+
+        with torch.no_grad():
+            for t in self.noise_scheduler.timesteps:
                 predicted_noise = self.model(sample, t).sample
-            sample = self.noise_scheduler.step(predicted_noise, t, sample).prev_sample
+                sample = self.noise_scheduler.step(predicted_noise, t, sample).prev_sample
 
         return sample
 
+    
+    def save(
+        self,
+        output_dir: str = 'models',
+        hf_org: str = 'DiffusionArcade',
+        model_name: str = 'diffusion_model'
+    ):
+        """Save model weights locally and push to Hugging Face Hub"""
 
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        output_path = output_dir / f"{model_name}.pth"
+        torch.save(self.model.state_dict(), str(output_path))
+        print(f"Model saved successfully to {output_path}!")
+    
+        hf_repo_id = f"{hf_org}/{model_name}"
+        print(f"Pushing model to Hugging Face repo: {hf_repo_id}...")
+        push_model_to_hf(str(output_path), hf_repo_id)
 
+        
 class LatentDiffusionModel:
     """
     Training and inference methods for a diffusion model in latent space.
@@ -298,6 +332,7 @@ class LatentDiffusionModel:
         epochs: int = 8,
         lr: float = 4e-4,
         wandb_config: dict = None,
+        show_generations: bool = True,
     ):
         """Train the diffusion model on latent representations"""
         optimizer = torch.optim.AdamW(self.model.parameters(), lr=lr)
@@ -364,9 +399,16 @@ class LatentDiffusionModel:
             avg_train_loss = sum(epoch_train_losses) / len(epoch_train_losses)
             train_losses.append(avg_train_loss)
 
-            # Save samples after each epoch to see the quality of generations of this model
-            latents = self.generate_latents(n_samples=4, num_inference_steps=1000)
-            wandb.log({"samples": wandb.Image(latents)}, step=global_step)
+            if show_generations:
+                # Save samples after each epoch to see the quality of generations of this model
+                vae = VAE(device=self.device, image_size=64)
+                latents = self.generate_latents(n_samples=4, num_inference_steps=1000) # Shape should be [4, latent_channel, latent_size, latent_size]
+                wandb.log({"latents": wandb.Image(latents)}, step=global_step)
+                
+                decoded_latents = vae.decode_latents(latents)
+                imgs = show_images(decoded_latents)
+                wandb.log({"generated samples": wandb.Image(imgs)}, step=global_step)
+                del vae
 
             # Validation
             avg_val_loss = None
@@ -428,10 +470,12 @@ class LatentDiffusionModel:
         # start from Gaussian noise in latent space
         latents = torch.randn(n_samples, self.latent_channels, self.latent_size, self.latent_size).to(self.device)
 
-        for t in self.noise_scheduler.timesteps:
-            with torch.no_grad():
+        self.model.eval()
+        
+        with torch.no_grad():
+            for t in self.noise_scheduler.timesteps:
                 noise_pred = self.model(latents, t).sample
-            latents = self.noise_scheduler.step(noise_pred, t, latents).prev_sample
+                latents = self.noise_scheduler.step(noise_pred, t, latents).prev_sample
 
         return latents
 

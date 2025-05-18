@@ -25,7 +25,8 @@ dependencies = [
     "python-dotenv",
     "wandb",
     "pillow",
-    "pygame"
+    "pygame",
+    "ipympl"
 ]
 
 [tool.wheel]

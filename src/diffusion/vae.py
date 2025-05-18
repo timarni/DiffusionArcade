@@ -7,7 +7,7 @@ from diffusers import AutoencoderKL
 class VAE:
     """A wrapper for a Hugging Face AutoencoderKL that provides encoding and decoding functions"""
 
-    def __init__(self, vae_name: str, device: torch.device, image_size: int):
+    def __init__(self, device: torch.device, image_size: int, vae_name: str = "stabilityai/sd-vae-ft-mse"):
         super().__init__()
         self.device = device
         self.image_size = image_size
@@ -19,8 +19,6 @@ class VAE:
         self.scale = self.vae.config.scaling_factor
         self.latent_channels = self.vae.config.latent_channels
         self.latent_size = int(math.sqrt(self.vae.config.sample_size))
-
-        print('The VAE was correctly instantiated!')
 
         # Preprocessing pipeline for input images
         self.preprocess = transforms.Compose([
