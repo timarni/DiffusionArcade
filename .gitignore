@@ -1,4 +1,7 @@
 wandb/
+models/
+notebooks/models/
+interactive_job.*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

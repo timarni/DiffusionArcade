@@ -4,6 +4,8 @@ import wandb
 
 from diffusers import UNet2DModel, DDIMScheduler, DDPMScheduler
 from tqdm import tqdm
+from src.utils import push_model_to_hf
+from pathlib import Path
 
 
 class DiffusionModel:
@@ -127,7 +129,7 @@ class DiffusionModel:
                 noisy_images = self.noise_scheduler.add_noise(clean_images, noise, timesteps)
                 noise_pred = self.model(noisy_images, timesteps).sample
 
-                 # Weight loss to allow the model to learn from images without much noise
+                # Weight loss to allow the model to learn from images without much noise
                 squared_diff = (noise_pred - noise)**2
                 loss = (squared_diff * weights.view(-1, 1, 1, 1)).mean()
 
@@ -278,7 +280,17 @@ class LatentDiffusionModel:
                 num_train_timesteps=timesteps,
                 beta_schedule=beta_schedule
             )
-    
+
+
+    def compute_noise_weights(self, timesteps, gamma=5.0):
+        alpha_bar = self.noise_scheduler.alphas_cumprod.to(timesteps.device)
+        snr = alpha_bar / (1 - alpha_bar)
+        snr_t = snr.gather(-1, timesteps)
+        weights = (snr_t + 1) / (snr_t + gamma)
+        
+        return weights
+
+
     def train(
         self,
         train_dataloader,
@@ -319,16 +331,21 @@ class LatentDiffusionModel:
                 latents = batch["latents"].to(self.device)
 
                 noise = torch.randn_like(latents)
+
                 timesteps = torch.randint(
                     0,
                     self.noise_scheduler.config.num_train_timesteps,
                     (latents.size(0),),
                     device=self.device
                 ).long()
+                weights = self.compute_noise_weights(timesteps)
 
                 noisy_latents = self.noise_scheduler.add_noise(latents, noise, timesteps)
                 noise_pred = self.model(noisy_latents, timesteps).sample
-                loss = F.mse_loss(noise_pred, noise)
+
+                # Weight loss to allow the model to learn from images without much noise
+                squared_diff = (noise_pred - noise)**2
+                loss = (squared_diff * weights.view(-1, 1, 1, 1)).mean()
 
                 loss.backward()
                 optimizer.step()
@@ -343,7 +360,13 @@ class LatentDiffusionModel:
 
                 global_step += 1
 
-            train_losses.append(sum(epoch_train_losses) / len(epoch_train_losses))
+
+            avg_train_loss = sum(epoch_train_losses) / len(epoch_train_losses)
+            train_losses.append(avg_train_loss)
+
+            # Save samples after each epoch to see the quality of generations of this model
+            latents = self.generate_latents(n_samples=4, num_inference_steps=1000)
+            wandb.log({"samples": wandb.Image(latents)}, step=global_step)
 
             # Validation
             avg_val_loss = None
@@ -351,21 +374,27 @@ class LatentDiffusionModel:
                 self.model.eval()
 
                 val_losses_epoch = []
+
                 with torch.no_grad():
                     for batch in val_dataloader:
                         latents = batch["latents"].to(self.device)
 
                         noise = torch.randn_like(latents)
+
                         timesteps = torch.randint(
                             0,
                             self.noise_scheduler.config.num_train_timesteps,
                             (latents.size(0),),
                             device=self.device
                         ).long()
+                        weights = self.compute_noise_weights(timesteps)
 
                         noisy_latents = self.noise_scheduler.add_noise(latents, noise, timesteps)
                         noise_pred = self.model(noisy_latents, timesteps).sample
-                        val_losses_epoch.append(F.mse_loss(noise_pred, noise).item())
+
+                        squared_diff = (noise_pred - noise) ** 2
+                        loss = (squared_diff * weights.view(-1, 1, 1, 1)).mean()
+                        val_losses_epoch.append(loss.item())
 
                         global_step += 1
 
@@ -374,12 +403,15 @@ class LatentDiffusionModel:
 
             # Log with wandb
             if wandb_config:
-                log_data = {"epoch": epoch+1, "epoch/train_loss": train_losses[-1]}
+                log_data = {"epoch": epoch+1, "epoch/train_loss": avg_train_loss}
                 if avg_val_loss is not None:
                     log_data["epoch/val_loss"] = avg_val_loss
                 wandb.log(log_data, step=global_step)
 
-            print(f"Epoch [{epoch+1}/{epochs}] Train Loss: {train_losses[-1]:.4f} Val Loss: {avg_val_loss if avg_val_loss else 'N/A'} LR: {scheduler.get_last_lr()[0]:.2e}")
+            print(f"Epoch [{epoch+1}/{epochs}] Train Loss: {avg_train_loss:.4f} Val Loss: {avg_val_loss if avg_val_loss else 'N/A'} LR: {scheduler.get_last_lr()[0]:.2e}")
+
+        if wandb_config:
+            wandb.finish()
 
         return train_losses, val_losses
 
@@ -402,3 +434,23 @@ class LatentDiffusionModel:
             latents = self.noise_scheduler.step(noise_pred, t, latents).prev_sample
 
         return latents
+
+
+    def save(
+        self,
+        output_dir: str = 'models',
+        hf_org: str = 'DiffusionArcade',
+        model_name: str = 'latent_diffusion_model'
+    ):
+        """Save model weights locally and push to Hugging Face Hub"""
+
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        output_path = output_dir / f"{model_name}.pth"
+        torch.save(self.model.state_dict(), str(output_path))
+        print(f"Model saved successfully to {output_path}!")
+    
+        hf_repo_id = f"{hf_org}/{model_name}"
+        print(f"Pushing model to Hugging Face repo: {hf_repo_id}...")
+        push_model_to_hf(str(output_path), hf_repo_id)
