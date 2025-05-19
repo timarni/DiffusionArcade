@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=diffusion
-#SBATCH --time=05:00:00
+#SBATCH --time=09:00:00
 #SBATCH --account=cs-503
 #SBATCH --qos=cs-503
 #SBATCH --gres=gpu:1                    # Request 1 GPU

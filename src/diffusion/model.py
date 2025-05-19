@@ -766,7 +766,7 @@ class ConditionedDiffusionModel:
                 noise_pred = self.model(cond, t).sample  # [B, 1, H, W]
                 
                 # denoise one step
-                sample = self.noise_scheduler.step(noise_pred, t, sample).prev_sample
+                sample = self.noise_scheduler.step(noise_pred, t, sample, eta=1.0).prev_sample
     
         return sample.squeeze(1) # Shape [B, H, W]
 

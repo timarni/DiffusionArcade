@@ -19,7 +19,7 @@ def get_args():
     parser = argparse.ArgumentParser(description="Train a latent diffusion model on Pong frames")
     
     parser.add_argument("--config", type=str, default="config.yaml", help="Path to the YAML config file")
-    parser.add_argument("--model-name", type=str, default="conditioned_diffusion_unet", help="Base name (without extension) for the saved model")
+    parser.add_argument("--model-name", type=str, default="conditioned_diffusion_unet_60_epochs", help="Base name (without extension) for the saved model")
     parser.add_argument("--output-dir", type=str, default="models", help="Directory where the final model `.pth` will be saved")
     parser.add_argument("--hf-org", type=str, default="DiffusionArcade", help="Hugging Face organization to push the model to")
 
