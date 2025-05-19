@@ -21,6 +21,12 @@ training_latents:
   model_name: "latent_diffusion_unet"
   <<: *default_config
 
+training_conditioned_images:
+  <<: *default_config
+  in_channels: 5 # Update this parameter based on the number of frames used as context. In this case: 4 previous frames, 1 next frame
+  out_channels: 1
+  model_name: "conditioned_diffusion_unet"
+
 model:
   block_out_channels: [64, 64, 64, 64]
   layers_per_block: 2
