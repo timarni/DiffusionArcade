@@ -25,7 +25,10 @@ dependencies = [
     "python-dotenv",
     "wandb",
     "pillow",
-    "pygame"
+    "pygame",
+    "ipympl",
+    "imageio[ffmpeg]",
+    "imageio-ffmpeg"
 ]
 
 [tool.wheel]

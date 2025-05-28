@@ -1,4 +1,7 @@
 wandb/
+models/
+notebooks/models/
+interactive_job.*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -167,7 +170,7 @@ cython_debug/
 #  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
 #  and can be added to the global gitignore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
-.idea/
+#.idea/
 
 # Ruff stuff:
 .ruff_cache/
@@ -182,6 +185,6 @@ PPO_ALE/ppo_env/*
 
 
 src/rl/QLearning_PLE/logs/
-src/rl/QLearning_PLE/screens/
+src/rl/QLearning_PLE/frames/
 src/rl/QLearning_PLE/scripts/__pycache__/
 src/rl/QLearning_PLE/agents/

@@ -97,24 +97,12 @@ Before running training:
 
 ## 🕹️ Reinforcement Learning with PLE (Pong)
 
-To train a Q-learning agent on Pong and record game states:
-
-1. Make the PLE setup script executable:
+1. Activate the conda environment:
    ```bash
-   chmod +x setup_ple_env.sh
+   conda activate diffusion_arcade
    ```
 
-2. Run the script to install dependencies:
-   ```bash
-   bash setup_ple_env.sh
-   ```
-
-3. Activate the virtual environment:
-   ```bash
-   source /home/runai-home/ple-venv/bin/activate  # Replace path if needed
-   ```
-
-4. Run the training script:
+2. Run the training script:
    ```bash
    python3 qlearn_pong.py
    ```
