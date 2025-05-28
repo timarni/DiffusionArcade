@@ -186,5 +186,6 @@ PPO_ALE/ppo_env/*
 
 src/rl/QLearning_PLE/logs/
 src/rl/QLearning_PLE/frames/
+src/rl/QLearning_PLE/screens/
 src/rl/QLearning_PLE/scripts/__pycache__/
 src/rl/QLearning_PLE/agents/
