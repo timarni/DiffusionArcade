@@ -1,0 +1,54 @@
+default_config: &default_config
+  epochs: 20
+  learning_rate: 0.0002
+  batch_size: 64
+  image_size: 64
+  timesteps: 1000
+  beta_schedule: "squaredcos_cap_v2"
+  scheduler: "DDPM"
+  num_inference_steps: 100
+  output_dir: "models"
+  hf_org: "DiffusionArcade"
+  action_embedding_size: 256
+  num_actions: 3
+  context_length: 8
+
+training_images:
+  <<: *default_config
+  in_channels: 1
+  out_channels: 1
+  model_name: "diffusion_unet"
+
+training_latents:
+  vae_name: "stabilityai/sd-vae-ft-mse"
+  model_name: "latent_diffusion_unet"
+  <<: *default_config
+
+training_conditioned_images:
+  <<: *default_config
+  in_channels: 8 # Update this parameter based on the number of frames used as context. In this case: 4 previous frames, 1 next frame
+  out_channels: 1
+  model_name: "conditioned_diffusion_unet"
+
+model:
+  block_out_channels: [64, 64, 64, 64]
+  layers_per_block: 2
+  down_block_types:
+    - "DownBlock2D"
+    - "DownBlock2D"
+    - "AttnDownBlock2D"
+    - "AttnDownBlock2D"
+  up_block_types:
+    - "AttnUpBlock2D"
+    - "AttnUpBlock2D"
+    - "UpBlock2D"
+    - "UpBlock2D"
+
+wandb:
+  project: "diffusion-arcade-final"
+  entity: "colin-smyth-epfl"
+  run_name: "diffusion-model"
+
+game:
+  model_path: "../notebooks/models/final/model_action_conditioning.pt"
+
