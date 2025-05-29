@@ -19,6 +19,7 @@ app = Flask(__name__)
 
 # Store current prompt or other input
 user_input = {"prompt": ""}
+current_key = {"key": ""}
 
 config = load_config("../config.yaml")
 
@@ -52,7 +53,9 @@ def submit():
 @app.route('/keypress', methods=['POST'])
 def keypress():
     data = request.json
-    print(f"Key received: {data.get('key')}")
+    key = data.get('key')
+    print(f"Key received: {key}")
+    current_key['key'] = key
     return {"status": "ok"}
 
 @app.route('/image')
@@ -66,7 +69,15 @@ def make_images(x):
     grid_im = grid.detach().cpu().permute(1, 2, 0).clip(0, 1) * 255
     grid_im = Image.fromarray(np.asarray(grid_im).astype(np.uint8))
     return grid_im
-    
+
+def key_to_action_idx(key):
+    key_to_action = {
+        "ArrowLeft": 0,
+        "ArrowRight": 1,
+    }
+
+    return key_to_action.get(key, 2)
+
 def generate_loop():
    
     print("Running up to date version of app.py")
@@ -82,7 +93,7 @@ def generate_loop():
                 # Run your diffusion model here with the prompt
             # print(f"Generating for prompt: {prompt}")
             print("Generating new image")
-            sample = model.generate_next_frame(frames, actions, num_inference_steps=30)
+            sample = model.generate_next_frame(frames, actions, num_inference_steps=10)
             print("Next frame shape:\t", sample.shape)
             image = make_images(sample)
             
@@ -90,11 +101,19 @@ def generate_loop():
             image.save("./static/output.png", "PNG")
 
             next_c_frame = sample.unsqueeze(1)          # [B, 1, H, W]
+
+            next_action = key_to_action_idx(current_key['key'])
+            print("Next action:\t", next_action)
+            next_action_tensor = torch.tensor([next_action]).unsqueeze(0).to(device)
+
+            print("Next action tensor shape:\t", next_action_tensor.shape)
+            print("Actions shape:\t\t", actions.shape)
+
             frames = torch.cat([frames[:, 1:, :, :], next_c_frame], dim=1).to(device)  # [B, C, H, W]
-            
-                # Save result to 'static/output.png'
-                # model.generate_image(prompt, save_path="static/output.png")
-            time.sleep(2)  # Adjust based on your model's speed
+            print("Actions before:\t", actions)
+            actions = torch.cat([actions[:, 1:], next_action_tensor], dim=1).to(device)
+            print("Actions after:\t", actions)
+            # time.sleep(1)  # Adjust based on your model's speed
     except Exception as e:
         print(f"Error in generate_loop: {e}")
 

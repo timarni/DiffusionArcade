@@ -22,23 +22,36 @@
   <h1>Press keys to control generation</h1>
   <p>Try: <kbd>W</kbd>, <kbd>A</kbd>, <kbd>S</kbd>, <kbd>D</kbd>, arrows, etc.</p>
 
-  <img id="output" src="/image?t=0" alt="Waiting for image..." />
+  <div>
+    Key pressed: <span id="key">None</span>
+  </div>
 
+  <div>
+    <img id="output" src="/image?t=0" alt="Waiting for image..." height="200", width="200"/>
+  </div>
+  
   <script>
+    const keyPressed = document.getElementById("key");
+
     document.addEventListener('keydown', function(event) {
-      const key = event.key;
+      keyPressed.textContent = event.key;
+
       fetch("/keypress", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key: key })
+        body: JSON.stringify({ key: event.key })
       });
+    });
+
+    document.addEventListener('keyup', () => {
+      keyPressed.textContent = "None";
     });
 
     // Refresh image every second
     setInterval(() => {
       const img = document.getElementById("output");
       img.src = "/image?t=" + Date.now();  // Force reload
-    }, 1000);
+    }, 500);
   </script>
 </body>
 </html>
