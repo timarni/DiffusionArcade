@@ -1,9 +1,12 @@
 import torch
 import torch.nn.functional as F
+import torch.nn as nn
 from torchvision.utils import make_grid
 import wandb
+import os
+from datetime import datetime
 
-from diffusers import UNet2DModel, DDIMScheduler, DDPMScheduler
+from diffusers import UNet2DModel, UNet2DConditionModel, DDIMScheduler, DDPMScheduler
 from tqdm import tqdm
 from src.utils import push_model_to_hf, show_images
 from src.diffusion.vae import VAE
@@ -480,7 +483,6 @@ class LatentDiffusionModel:
 
         return latents
 
-
     def save(
         self,
         output_dir: str = 'models',
@@ -499,6 +501,7 @@ class LatentDiffusionModel:
         hf_repo_id = f"{hf_org}/{model_name}"
         print(f"Pushing model to Hugging Face repo: {hf_repo_id}...")
         push_model_to_hf(str(output_path), hf_repo_id)
+
 
 
 class ConditionedDiffusionModel:
@@ -552,7 +555,6 @@ class ConditionedDiffusionModel:
                 beta_schedule=beta_schedule
             )
 
-
     def compute_noise_weights(self, timesteps, gamma=5.0):
         alpha_bar = self.noise_scheduler.alphas_cumprod.to(timesteps.device)
         snr = alpha_bar / (1 - alpha_bar)
@@ -561,7 +563,6 @@ class ConditionedDiffusionModel:
         
         return weights
             
-
     def train(
         self,
         train_dataloader,
@@ -586,7 +587,6 @@ class ConditionedDiffusionModel:
             final_div_factor=150.0,
             anneal_strategy="cos",
         )
-        
         train_losses = []
         val_losses = []
         best_val_loss = float('inf')
@@ -639,7 +639,6 @@ class ConditionedDiffusionModel:
 
             avg_train_loss = sum(epoch_train_losses) / len(epoch_train_losses)
             train_losses.append(avg_train_loss)
-
             
             if show_generations and val_dataloader is not None:
                 (frames, actions), _ = next(iter(val_dataloader)) # Shape: [B, C, H, W]
@@ -788,6 +787,8 @@ class ConditionedDiffusionModel:
         hf_repo_id = f"{hf_org}/{model_name}"
         print(f"Pushing model to Hugging Face repo: {hf_repo_id}...")
         push_model_to_hf(str(output_path), hf_repo_id)
+
+
 
 class ConditionedDiffusionModelWithAction(nn.Module):
     def __init__(
