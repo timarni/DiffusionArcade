@@ -111,6 +111,30 @@ Before running training:
 
 ---
 
+## 👾 Running the game
+
+1. After getting access to a compute node, run the below command **from the compute note**:
+```
+ssh -f -N -R 7860:localhost:7860 <scitas-username>@izar.epfl.ch
+```
+
+2. On your **local machine** run:
+```
+ssh -f -N -L 7860:localhost:7860 <scitas-username>@izar.epfl.ch
+```
+This will set up a tunnel from compute node -> cluster -> local machine.
+
+3. Edit the ```game -> model_path``` feature in ```app_config.yaml``` file to point to the correct model path that you want to use.
+
+4. On the compute note, run:
+```
+cd ~/DiffusionArcade/diffusion_app
+python3 app.py
+```
+
+5. In your browser on your local machine, navigate to ```localhost:7860``` and you should see the output of the game
+
+
 # ✅ To-Do List: DiffusionArcade
 
 ## 🕹️ Reinforcement Learning (RL)
