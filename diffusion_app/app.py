@@ -21,7 +21,7 @@ app = Flask(__name__)
 user_input = {"prompt": ""}
 current_key = {"key": ""}
 
-config = load_config("../config.yaml")
+config = load_config("./app_config.yaml")
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}\n\n")
@@ -93,7 +93,7 @@ def generate_loop():
                 # Run your diffusion model here with the prompt
             # print(f"Generating for prompt: {prompt}")
             print("Generating new image")
-            sample = model.generate_next_frame(frames, actions, num_inference_steps=10)
+            sample = model.generate_next_frame(frames, actions, num_inference_steps=config['game']['num_inference_steps'])
             print("Next frame shape:\t", sample.shape)
             image = make_images(sample)
             
