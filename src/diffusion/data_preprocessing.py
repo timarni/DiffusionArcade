@@ -17,11 +17,12 @@ class ContextFrameDataset(Dataset):
         step (int): Stride between frames (default=2).
         transform (callable, optional): Transform to apply to each image.
     """
-    def __init__(self, dataset, context_length, step=2, transform=None):
+    def __init__(self, dataset, context_length, step=2, transform_context=None, transform_gt=None):
         self.dataset = dataset
         self.context_length = context_length
         self.step = step
-        self.transform = transform
+        self.transform_context = transform_context
+        self.transform_gt = transform_gt
         self.samples = []
 
         # Build index mapping per episode
@@ -39,7 +40,6 @@ class ContextFrameDataset(Dataset):
                 gt_idx = int(group.loc[i, "index"])
                 self.samples.append((idxs, gt_idx))
 
-
     def __len__(self):
         return len(self.samples)
 
@@ -53,9 +53,10 @@ class ContextFrameDataset(Dataset):
         ground_truth = self.dataset[int(gt_idx)]["image"]
 
         # Apply transforms if provided (each frame: 1xHxW)
-        if self.transform:
-            context_frames = [self.transform(img) for img in context_frames]
-            ground_truth = self.transform(ground_truth)
+        if self.transform_context:
+            context_frames = [self.transform_context(img) for img in context_frames]
+        if self.transform_gt:
+            ground_truth = self.transform_gt(ground_truth)
 
         # Stack grayscale frames as channels -> shape (context_length, H, W)
         context_frames = torch.cat(context_frames, dim=0)
@@ -89,3 +90,10 @@ class ContextFrameDataset(Dataset):
             generator=torch.Generator().manual_seed(random_seed)
         )
         return train_ds, val_ds
+
+class BinarizeFrame:
+    def __init__(self, threshold=0.5):
+        self.threshold = threshold
+
+    def __call__(self, tensor):
+        return (tensor > self.threshold).float()
