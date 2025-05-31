@@ -60,7 +60,7 @@ conda activate diffusion_arcade
 Being in an interactive node, you can run the training script using:
 
 ``` bash
-python run_training.py --config path/to/your/config.yaml --model-name conditioned_diffusion_model --output-dir models --hf-org your_organization
+python run_training.py --config config.yaml --model-name conditioned_diffusion_model --output-dir models --hf-org your_organization
 ```
 
 
