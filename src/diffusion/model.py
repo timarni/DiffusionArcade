@@ -1033,13 +1033,13 @@ class ConditionedDiffusionModelWithAction(nn.Module):
                 f"LR: {scheduler.get_last_lr()[0]:.2e}"
             )
 
-            os.makedirs(f"./models/checkpoints/{self.timestamp}", exist_ok=True)
+            os.makedirs(f"./models/{self.timestamp}/checkpoints", exist_ok=True)
             
             if epoch % 10 == 9 and epoch > 0:
-                torch.save(self.model.state_dict(), f"./models/checkpoints/{self.timestamp}/model_checkpoint_{self.timestamp}_{epoch+1}.pt", )
+                torch.save(self.model.state_dict(), f"./models/{self.timestamp}/checkpoints/model_checkpoint_{self.timestamp}_{epoch+1}.pt", )
         
-        os.makedirs("./models/final", exist_ok=True)
-        torch.save(self.model.state_dict(), f"./models/final/model_{self.timestamp}_epochs_{epoch}.pt", )
+        os.makedirs(f"./models/{self.timestamp}/final", exist_ok=True)
+        torch.save(self.model.state_dict(), f"./models/{self.timestamp}/final/model_{self.timestamp}.pt", )
         
         if wandb_config:
             wandb.finish()
