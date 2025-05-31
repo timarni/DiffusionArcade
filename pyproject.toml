@@ -28,7 +28,8 @@ dependencies = [
     "pygame",
     "ipympl",
     "imageio[ffmpeg]",
-    "imageio-ffmpeg"
+    "imageio-ffmpeg",
+    "flask"
 ]
 
 [tool.wheel]
