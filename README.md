@@ -133,20 +133,3 @@ python3 app.py
 ```
 
 5. In your browser on your local machine, navigate to ```localhost:7860``` and you should see the output of the game
-
-
-# ✅ To-Do List: DiffusionArcade
-
-## 🕹️ Reinforcement Learning (RL)
-
-- [ ] Finalize and debug all three RL algorithms to ensure they work as intended.
-- [ ] Collect a sufficient dataset to support diffusion training.
-- [ ] Adjust RL strategy (e.g., exploration vs. exploitation balance, curriculum learning) to align with the data needs of the diffusion model.
-
-## 🎨 Diffusion Model
-
-- [ ] Fix CUDA out-of-memory issue when using latent representations (e.g., optimize batch size or memory usage).
-- [ ] Train the model on a larger dataset to improve Pong frames quality and consistency.
-- [ ] Evaluate and possibly fine-tune the VAE encoder with the new dataset.
-- [ ] Implement action conditioning by including player inputs at each time step.
-- [ ] Integrate context by combining latent encodings of previous frames with current action embeddings.
