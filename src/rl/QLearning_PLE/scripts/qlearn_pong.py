@@ -40,7 +40,7 @@ EPSILON_START = 1.0  # ε‑greedy exploration schedule (with proba ε take a ra
 EPSILON_END = 0.1
 EPSILON_DECAY_LEN = int(0.9*EPISODES)  # linearly decay over whole run
 STATE_BINS = (6, 6, 4, 6, 3, 3, 6)  #(12, 12, 8, 12, 3, 3, 12) # discretisation for y, y‑vel, x, y, vx, vy, y
-REWARD_POLICY = 'human'
+REWARD_POLICY = 'basic' # started after the human experiment
 
 ### Evaluations for debugging
 EVAL_AGENT_SCORE = True
@@ -163,7 +163,7 @@ def train_agent(fps=30, display_screen=False, recording=True):
     ### create Q‑table & logging CSV
     Q = defaultdict(lambda: [0.0] * len(ACTIONS))
 
-    run_stamp = datetime.now().strftime("%Y‑%m‑%d_%H‑%M‑%S")
+    run_stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
     penalty_sum = '?'
 
@@ -186,8 +186,8 @@ def train_agent(fps=30, display_screen=False, recording=True):
         ret_csv = csv.writer(open(ret_path, "w", newline=""))
         ret_csv.writerow(["episode", "return"])
 
-        os.makedirs(f"{FILE_PATH.parent.parent}/screens/", exist_ok=True)
-        screen_csv = open(f"{FILE_PATH.parent.parent}/screens/{run_stamp}.csv", "w", newline="")
+        os.makedirs(f"{FILE_PATH.parent.parent}/screens2/", exist_ok=True)
+        screen_csv = open(f"{FILE_PATH.parent.parent}/screens2/{run_stamp}.csv", "w", newline="")
         screen_writer = csv.writer(screen_csv)
 
     # main loop
@@ -245,7 +245,7 @@ def train_agent(fps=30, display_screen=False, recording=True):
             )
             state = next_state
 
-            if recording and step % 20 == 0 and ep > 4500:
+            if recording and ep == EPISODES-1: #step % 20 == 0 and ep > 4500:  # 
                 # write frame/game state information to csv
                 csv_writer.writerow([
                     ep, step,
@@ -265,7 +265,7 @@ def train_agent(fps=30, display_screen=False, recording=True):
                 # convert to BGR because OpenCV expects that
                 frame_bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
                 # build filename: e.g. ep0007_step01234_r+1.jpg
-                fname = f"{FILE_PATH.parent.parent}/screens/ep{ep:04d}_step{step:05d}.jpg"
+                fname = f"{FILE_PATH.parent.parent}/screens2/ep{ep:04d}_step{step:05d}.jpg"
                 cv2.imwrite(fname, frame_bgr)  # finally write JPEG
                 nbr_of_screens += 1
                 screen_writer.writerow([f"{ep}_{step}", ACTION_IDX[action]])
@@ -361,6 +361,10 @@ def main():
     )
 
     print(f"Penalty sum: {penalty_sum:.4f}")
+
+    # Save returns to later plot
+    returns = np.array(episode_returns, dtype=float)
+    np.save(f"{FILE_PATH.parent.parent}/logs/returns_{run_stamp}.npy", returns)
 
     # Plot learning curves
     if not args.no_plot:
